@@ -9,8 +9,8 @@
 	.=200
 
 MAIN::
-1$:	MOV	@#SWITCHES, R0
-	INC	R0
+	MOV	@#SWITCHES, R0
+1$:	INC	R0
 	MOV	R0, @#LIGHTS
 	BR	1$
 
