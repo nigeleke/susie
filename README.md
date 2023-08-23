@@ -28,7 +28,7 @@ This project is very likely absolutely no use to anyone at all in any way shape 
 
 ### Pre-requisite
 
-Requires local nix install of `github:nigeleke/macro11`.
+Requires local nix install of [`github:nigeleke/macro11`](https://github.com/nigeleke/macro11).
 
 ### Build
 
