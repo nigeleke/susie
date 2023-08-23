@@ -28,7 +28,9 @@
 ;		4) Control routine
 ;
 	.ASECT
-.	=	400
+TTY	=	1
+.	=	200
+	JMP	SUSIE
 ;
 ;	R E G I S T E R   M A C R O S
 ;
