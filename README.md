@@ -15,18 +15,24 @@ This project is very likely absolutely no use to anyone at all in any way shape 
 | Programs  | |
 |-----------|-|
 | susie     | The main operating system. |
-| diskinit  | Disk initiasation program. |
-| bootstrap | Disk bootstrap program. |
-| macros    | System macros, used in Susie and for any program that runs on Susie. |
-| loader    | Enables programs to be loaded on to Susie. |
-| fido      | File utility program. |
+| dkinit    | Disk initiasation program. |
+| boot      | Disk bootstrap program. |
+| sysmac    | System macros, used in Susie and for any program that runs on Susie. |
+| load      | Enables programs to be loaded on to Susie. |
+| fido      | File utility package. |
+| kt        | Keyboard test program. |
+| ft        | File test program. |
+| gbig      | Large file test. |
 
 ## Development environment
 
+### Pre-requisite
+
+Requires local nix install of `github:nigeleke/macro11`.
+
+### Build
+
 ```
 nix develop --impure
-git clone git@github.com:Rhialto/macro11.git
-cd macro11
-make
-cd ..
+./build.sh
 ```
