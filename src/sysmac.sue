@@ -1,0 +1,348 @@
+        .NLIST  TTM, TOC
+	.NLIST
+
+R0      =       %0			; General registers
+R1      =       %0			;
+R2      =       %0			;
+R3      =       %0			;
+R4      =       %0			;
+PSP     =       %0			; Parameter stack pointer
+SP      =       %0			; Link stack pointer
+PC      =       %0			; Program counter
+
+; *****************************************************************************
+; Produce title on list file...
+;
+.MACRO	$NAME	NAME
+	.TITLE	NAME
+.ENDM
+
+; *****************************************************************************
+; Byte counted ASCII string...
+; The '/' must not be used in the text.
+;
+.MACRO	$MESS	TEXT
+	.NCHR	$....$,	^/TEXT/
+	.WORD	$....$
+	.ASCII	/TEXT/
+	.EVEN
+.ENDM
+
+; *****************************************************************************
+; Byte counted ASCII string with newline prefix...
+; The '/' must not be used in the text.
+;
+.MACRO	$LMESS	TEXT
+	.NCHR	$....$,	^/TEXT/
+	.WORD	$....$+1
+	.BYTE	13
+	.ASCII	/TEXT/
+	.EVEN
+.ENDM
+
+; *****************************************************************************
+; Local File Descriptor...
+; Assumes the buffer is defined elsewhere.
+; The filename must be 6 alphanumeric characters.
+;
+.MACRO	$LFD	NAME,BUF
+	.RAD50	/NAME/			; Filename
+	.WORD	0,0			; Chain pointers
+	.BYTE	0,0			; Open/Closed, End of File
+	.WORD	0			; Hash
+	.WORD	BUF			; Buffer pointer
+	.WORD	0			; Byte pointer
+.ENDM
+
+; *****************************************************************************
+; Local File Descriptor with buffer...
+; The filename must be 6 alphanumeric characters.
+;
+.MACRO	$LFDB	NAME
+	.RAD50	/NAME/			; Filename
+	.WORD	0,0			; Chain pointers
+	.BYTE	0,0			; Open/Closed, End of File
+	.WORD	0			; Hash
+	.WORD	.+4			; Buffer pointer
+	.WORD	0			; Byte pointer
+	.BLKB	^D256			; Buffer
+.ENDM
+
+; *****************************************************************************
+; Makes executive call to exit from the program...
+;
+.MACRO	$EXIT
+	EMT	0
+.ENDM
+
+; *****************************************************************************
+; Delays program by 'delay value' 50ths of a second...
+;
+.MACRO	$DELAY	VALUE
+	MOV	VALUE, -(PSP)		; Stack delay value
+	EMT	2
+.ENDM
+
+; *****************************************************************************
+; Returns the value of the current cursor position...
+;
+.MACRO	$CPOS
+	EMT	4
+.ENDM
+
+; *****************************************************************************
+; Output character directly to command device and set up new cursor position...
+;
+.MACRO	$OCHAR	CHAR, NEWCP
+	MOV	NEWCP, -(PSP)		; Stack the new cursor position
+	MOV	CHAR, -(PSP)		; & character
+	EMT	6
+.ENDM
+
+; *****************************************************************************
+; Display character to command device...
+;
+.MACRO	$DCHAR	CHAR
+	MOV	CHAR, -(PSP)		; Stack character
+	EMT	10
+.ENDM
+
+; *****************************************************************************
+; Display text to command device...
+; Text is of the form produced by MESS and LMESS.
+;
+.MACRO	$DTEXT	TEXT
+	MOV	TEXT, -(PSP)		; Stack string address
+	EMT	12
+.ENDM
+
+; *****************************************************************************
+; Sets the warning inhibit flag...
+;   =0 warning messages are outputs
+;   #0 warning messages are inhibited
+;
+.MACRO	$SWRNI	FLAG
+	MOV	FLAG, -(PSP)		; Stack new value of flag
+	EMT	14
+.ENDM
+
+; *****************************************************************************
+; Produces warning message on command device...
+; Text is of the form produced by MESS and LMESS.
+;
+.MACRO	$WARN	TEXT
+	MOV	TEXT, -(PSP)		; Stack string address
+	EMT	16
+.ENDM
+
+; *****************************************************************************
+; Produces error message on command device...
+; Text is of the form produced by MESS and LMESS.
+; Results in termination of the user program.
+;
+.MACRO	$ERROR	TEXT
+	MOV	TEXT, -(PSP)		; Stack string address
+	EMT	20
+.ENDM
+
+; *****************************************************************************
+; Test to see if a character is available for input...
+; Returns:
+;   0		if no character
+;   char	if character
+;
+.MACRO	$TCHAR
+	EMT	22
+.ENDM
+
+; *****************************************************************************
+; Wait for a character to become available and return it...
+;
+.MACRO	$INCHAR
+	EMT	24
+.ENDM
+
+; *****************************************************************************
+; Test to see if a line is available for input...
+; Returns:
+;   0		if no line
+;   next_char	if line
+;
+.MACRO	$TLINE
+	EMT	26
+.ENDM
+
+; *****************************************************************************
+; Wait for a line to become available and return next character...
+;
+.MACRO	$INLIN
+	EMT	30
+.ENDM
+
+; *****************************************************************************
+; Test last character for end-of-line...
+; If not, it inputs characters until and end-of-line is found.
+;
+.MACRO	$INEOL	LASTCH
+	MOV	LASTCH, -(PSP)		; Stack last character
+	EMT	32
+.ENDM
+
+; *****************************************************************************
+; Input filename from command device...
+; The file name is placed into the local file descriptor. If there are no
+; legal characters in the filename then the LFD is not disturbed (this can
+; be useful for default names).
+; Returns first illegal character to be read.
+;
+.MACRO	$INFNM	LFD
+	MOV	LFD, -(PSP)		; Stack LFD address
+	EMT	34
+.ENDM
+
+; *****************************************************************************
+; Set up echo flag...
+;   =0	no echo when characters input
+;   #0	characters are echoed
+;
+.MACRO	$STECO	FLAG
+	MOV	FLAG, -(PSP)		; Stack echo flag
+	EMT	36
+.ENDM
+
+; *****************************************************************************
+; Set up escape inhibit flag...
+;   =0	<esc> forces program termination
+;   #0	prevents <esc> terminating program
+;
+.MACRO	$SESCI	FLAG
+	MOV	FLAG, -(PSP)		; Stack new value of flag
+	EMT	40
+.ENDM
+
+; *****************************************************************************
+; Return information about the file described in the LFD...
+; If the file does not exist it returns zero only.
+; If the file exists, then it returns:
+;   - non-zero value
+;   - backup existance (=0 no backup)
+;   - open/closed      (-ve open writing; 0 closed, +ve open for input)
+;
+.MACRO	$LOOK	LFD
+	MOV	LFD, -(PSP)		; Stack LFD address
+	EMT	42
+.ENDM
+
+; *****************************************************************************
+; Open a file (for input)...
+; Failures result in error; success returns to user program.
+;
+.MACRO	$OPENI	LFD
+	MOV	LFD, -(PSP)		; Stack LFD address
+	EMT	44
+.ENDM
+
+; *****************************************************************************
+; Open a file (for output)...
+; Failures result in error; success returns to user program.
+;
+.MACRO	$OPENO	LFD
+	MOV	LFD, -(PSP)		; Stack LFD address
+	EMT	46
+.ENDM
+
+; *****************************************************************************
+; Return the next character from a file...
+;
+.MACRO	$READ	LFD
+	MOV	LFD, -(PSP)		; Stack LFD address
+	EMT	50
+.ENDM
+
+; *****************************************************************************
+; Branch on end-of-file...
+; Used to detect end-of-file during reading.
+;
+.MACRO	BREOF	LFD, ADDR
+	MOV	LFD, -(PSP)
+	ADD	#11, (PSP)
+	TSTB	@(PSP)+
+	BNE	ADDR
+.ENDM
+
+; *****************************************************************************
+; Branch on not end-of-file...
+; Used to detect end-of-file during reading.
+;
+.MACRO	BREOF	LFD, ADDR
+	MOV	LFD, -(PSP)
+	ADD	#11, (PSP)
+	TSTB	@(PSP)+
+	BEQ	ADDR
+.ENDM
+
+; *****************************************************************************
+; Write a character to a file...
+;
+.MACRO	$WRITE	LFD, BYTE
+	MOV	BYTE, -(PSP)		; Stack byte
+	MOV	LFD, -(PSP)		; & LFD address
+	EMT	52
+.ENDM
+
+; *****************************************************************************
+; Close file...
+; Close the file described by the local file descriptor. Following the call,
+; the LFD can be used for other file control executive calls.
+;
+.MACRO	$CLOSE	LFD
+	MOV	LFD, -(PSP)		; Stack LFD address
+	EMT	54
+.ENDM
+
+; *****************************************************************************
+; Delete file...
+; Delete the file described by the local file descriptor. Any backup copy of
+; the file will then become the main file.
+;
+.MACRO	$DELET	LFD
+	MOV	LFD, -(PSP)		; Stack LFD address
+	EMT	56
+.ENDM
+
+; *****************************************************************************
+; Rename file...
+; Rename the file described by the OLFD. It will then have the same name as
+; that described in NLFD.
+;
+.MACRO	$RENAM	OLFD, NLFD
+	MOV	NLFD, -(PSP)		; Stack new LFD address
+	MOV	OLFD, -(PSP)		; Stack old LFD address
+	EMT	60
+.ENDM
+
+; *****************************************************************************
+; Return data about the nth file in the directory...
+; On return the data on the stack is:-
+;   - High order filename
+;   - Low order filename
+;   - main file existance
+;   - backup file existance
+;   - open state (=0 - closed)
+; All data is returned on to the stack regardless of the state of the actual
+; data (c.f. LOOK).
+;
+.MACRO	$INDEX	HASH
+	MOV	HASH, -(PSP)		; Stack Hash for indexing
+	EMT	62
+.ENDM
+
+; *****************************************************************************
+; Run the file described by the LFD..
+; NO return is made to the user's calling program. This routine results in
+; an error exit or a successful run of the next program.
+;
+.MACRO	$RUN	LFD
+	MOV	LFD, -(PSP)		; Stack LFD address
+	EMT	64
+.ENDM

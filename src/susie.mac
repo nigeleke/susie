@@ -1,0 +1,1068 @@
+	.NLIST	TTM, TOC
+	.TITLE	SUSIE
+;
+;	The City University
+;	BSc Degree in Computer Science
+;	Project
+;
+;	"An Operating System for a Minicomputer"
+;	by
+;	Nigel Eke
+;
+;************************************************
+;*						*
+;*						*
+;*		S U S I E			*
+;*		- - - - -			*
+;*						*
+;*						*
+;************************************************
+;
+;	Single User Interactive Executive
+;
+;	This program contains all the routines necessary
+;	for a small executive.  These include:-
+;		1) Command device I/O
+;		2) File handling
+;		3) Error handling
+;		4) Control routine
+;
+	.ASECT
+.	=	400
+;
+;	R E G I S T E R   M A C R O S
+;
+R0	=	%0			; General registers
+R1	=	%1			;
+R2	=	%2			;
+R3	=	%3			;
+R4	=	%4			;
+PSP	=	%5			;
+SP	=	%6			; Stack pointer
+PC	=	%7			; Program counter
+PSW	=	177776			; Processor status
+;
+;	D A T A   D E F I N I T I O N S
+;
+BELL	=	7			; Bell
+BS	=	10			; ASCII backspace
+BSP	=	32			; VDU backspace
+TAB	=	11			; Tab
+LF	=	12			; Line feed
+CR	=	15			; Carriage return
+EOL	=	13			; End of line
+FF	=	14			; Form feed
+CAN	=	30			; Cancel
+DEL	=	177			; Delete
+SPACE	=	40			; Space
+ESC	=	33			; Escape
+	.PAGE
+	.SBTTL	General Routines
+;
+;	The following are general routines for the executive.
+;	EXIT and DELAY are UUOs (Unimplemented User Operations).
+;
+;
+;	R E G I S T E R   S A V E
+;
+;	Saves registers (R0-R4) on stack
+;
+RS:	MOV	(SP)+,	-(PSP)		; Save return address
+	MOV	R0,	-(SP)		; Save registers
+	MOV	R1,	-(SP)		;
+	MOV	R2,	-(SP)		;
+	MOV	R3,	-(SP)		;
+	MOV	R4,	-(SP)		;
+	JMP	@(PSP)+			;<<
+;
+;	R E G I S T E R   R E C A L L
+;
+;	Recalls registers (R4-R0) from stack
+;
+RR:	MOV	(SP)+,	-(PSP)		; Save return address
+	MOV	(SP)+,	R4		; Restore registers
+	MOV	(SP)+,	R3		;
+	MOV	(SP)+,	R2		;
+	MOV	(SP)+,	R1		;
+	MOV	(SP)+,	R0		;
+	JMP	@(PSP)+			;<<
+;
+;	E X I T
+;
+;	Performs exit procedure:
+;		1) Close all files
+;		2) Rewrite bitmap and directory
+;		3) Reset stacks and status word
+;		4) Disable escape facility
+;
+;++
+;@ Todo add disk stuff
+$EXIT:	;MOV	OFCF,	R0		; Closed all files?
+	;BEQ	EXIT			; Yes
+	;MOV	R0,	-(PSP)		; No - close this one
+	;JSR	PC,	$CLOSE		;
+	;BR	$EXIT
+EXIT::	;MOV	#BITMAP, -(PSP)		; Write back important tables
+	;CLR	-(PSP)			; Bitmap- sector zero
+	;MOV	#DKWRIT, -(PSP)		;
+	;JSR	PC, 	DDA		;
+	;MOV	#2,	R0		; Two sectors for directory
+	;MOV	#FILES+^D512, R1	; Offset into directory
+;EXIT2:	MOV	R1,	-(PSP)		; Read directory from disk
+	;MOV	R0,	-(PSP)		;
+	;MOV	#DKWRIT, -(PSP)		;
+	;JSR	PC,	DDA		;
+	;SUB	#^D512,	R1		;
+	;SOB	R0,	EXIT2		;
+;--			;
+	MOV	#100000, SP		; Reset link stack
+	MOV	#40000,	PSP		; Reset parameter stack
+	MOV	#-1,	EIF		; Disable escapes
+	CLR	@#PSW			; Low priority
+	JMP	EVER			; Enter SUSIE ever loop
+;
+;	D E L A Y
+;
+;	Delays execution of calling program by number
+;	of 'Jiffies' specified.
+;	'Type-ahead' can still take place.
+;
+LKS	=	177546			; Line Clock Status
+LKIV	=	100
+
+LKC:	.WORD	0			; Line Clock count
+
+LKISR:	DEC	LKC			; Increment link clock count
+	BNE	LKISR1			; If not=0 then return to br .
+	ADD	#2,	(SP)		; else return to clr status
+LKISR1:	RTI				;<<
+
+$DELAY:	MOV	(PSP)+, LKC		; Get delay value
+	BEQ	DELAY1			; End if no delay
+	BIS	#100, @#LKS		; Set interrupt enable
+	BR	.			; Wait for interrupt
+DELAY1:	RTS	PC			;<<
+	.PAGE
+	.SBTTL	Command Device Control
+;
+; The following routines make up the I/O control for SUSIE's
+; command device (display & keyboard)
+; The interrupt service routines are included
+;
+;
+;	D I S P L A Y
+;
+.IF	NDF, TTY
+DDS	=	177520			; Status
+DDB	=	177522			; Buffer
+DDIE	=	100			; Interupt enable bit
+DDIV	=	110			; Interupt vector
+.IFF
+DDS	=	177564			; TTY Printer Status
+DDB	=	177566			; TTY Printer Buffer
+DDIE	=	100			; Interupt enable bit
+DDIV	=	64			; Interupt vector
+.ENDC
+;
+;	B U F F E R S
+;
+DOB:					; Display output buffer
+	.BLKB	400
+DOBC:					; Buffer ceiling
+
+DOBIN:	.WORD	DOB			; Next in byte pointer
+DOBOUT:	.WORD	DOB			; Next out byte pointer
+
+CP:	.WORD	0			; Cursor position
+
+WIF:	.WORD	0			; Warning inhibit flag
+
+CONT:					; Control character name table
+	.ASCII	/DEL/			; Delete
+	.ASCII	/NUL/			; Null
+	.ASCII	/SOH/			; Start of Heading
+	.ASCII	/STX/			; Start of Text
+	.ASCII	/ETX/			; End of Text
+	.ASCII	/EOT/			; End of Transmission
+	.ASCII	/ENQ/			; Enquiry
+	.ASCII	/ACK/			; Acknowledge
+	.BYTE	0, 0, 0			; Bell
+	.ASCII	/BS /			; Backspace
+	.BYTE	0, 0, 0			; Tab
+	.ASCII	/LF /			; Line feed
+	.BYTE	0, 0, 0			; End of line - Vertical Tab
+	.ASCII	/FF /			; Form feed
+	.ASCII	/CR /			; Carriage return
+	.ASCII	/SO /			; Shift out
+	.ASCII	/SI /			; Shift in
+	.ASCII	/DLE/			; Data link escape
+	.ASCII	/DC1/			; Device Control One
+	.ASCII	/DC2/			; Device Control Two
+	.ASCII	/DC3/			; Device Control Three
+	.ASCII	/DC4/			; Device Control Four
+	.ASCII	/NAK/			; Negative Acknowledge
+	.ASCII	/SYN/			; Synchronous Idle
+	.ASCII	/ETB/			; End of Transmission Block
+	.ASCII	/CAN/			; Cancel
+	.ASCII	/EM /			; End of Message
+	.ASCII	/SUB/			; Substitute
+	.ASCII	/ESC/			; Escape
+	.ASCII	/FS /			; File Separator
+	.ASCII	/GS /			; Group Separator
+	.ASCII	/RS /			; Record Separator
+	.ASCII	/US /			; Unit Separator
+CONTT:					; Table top
+	.EVEN
+
+CCPRT:					; Display control char print routines
+	.WORD	DBELL			; Bell
+	.WORD	0			;
+	.WORD	DTAB			; Tab
+	.WORD	0			;
+	.WORD	DEOL			; End of Line
+	.PAGE
+;
+;	I N T E R R U P T   S E R V I C E
+;
+;	This constitutes the interrupt service routines for
+;	the display output.
+;	Interrupts are re-enabled only if another character
+;	needs to be output
+;
+DISR:	BICB	#DDIE,	@#DDS		; Disable interrupts
+	CMP	DOBIN,	DOBOUT		; Buffer empty?
+	BEQ	DIS2			; Yes
+	MOVB	@DOBOUT, @#DDB		; No. O/p next char
+	INC	DOBOUT			; Step pointer
+	CMP	DOBOUT,	#DOBC		; Gone beyond end ?
+	BNE	DIS1			; Branch if not
+	MOV	#DOB,	DOBOUT		; Yes- reset
+DIS1:	BISB	#DDIE,	@#DDS		; Enable interrupts
+DIS2:	RTI				;<<
+	.PAGE
+;
+;	U S E R   S E R V I C E
+;
+;	The following routine are the UUOs concerned with
+;	display output.
+;
+;
+;	C U R S O R   P O S I T I O N
+;
+;	Returns the current value of the
+;	cursor position.
+;
+$CPOS:	MOV	CP,	-(PSP)		; Stack cursor position
+	RTS	PC			;<<
+;
+;	D I R E C T   O U T P U T
+;
+;	Outputs character directly to the display.
+;	Sets column count as specified.
+;	If for TTY then o/p newline when column count >= 72
+;
+$OCHAR:	MOV	DOBOUT,	-(PSP)		; Check full buffer?
+	SUB	DOBIN,	(PSP)		;
+	BIC	#177400, (PSP)		;
+	DEC	(PSP)+			;
+	BEQ	$OCHAR			; Yes- wait for space
+	MOV	(PSP)+,	-(SP)		; No- dump char
+	MOVB	(SP)+,	@DOBIN		;
+	INC	DOBIN			; Step pointer
+	CMP	DOBIN,	#DOBC		; Gone over end ?
+	BNE	OCHAR1			; No
+	MOV	#DOB,	DOBIN		; Yes- reset
+OCHAR1:	MOV	(PSP)+,	CP		; Set new column count
+.IF	DF, TTY
+	CMP	CP,	#^D72		; Check gone over line
+	BLO	OCHAR2			; No
+	MOV	#EOL,	-(PSP)		; Yes- O/p <CR><LF>
+	JSR	PC,	$DCHAR		;
+OCHAR2:					;
+.ENDC
+	BISB	#DDIE,	@#DDS		; Initiate interrupts
+	RTS	PC			;<<
+;
+;	C O N T R O L L E D   O U T P U T
+;
+;	Outputs character to display.
+;	Special output for <EOL><BEL><TAB>
+;	and other control characters.
+;	The column count is adjusted accordingly.
+;
+$DCHAR:	JSR	PC,	RS
+	BIC	#177600, (PSP)		; Strip unwanted bits
+	MOV	(PSP),	R0		; Put character in R0
+	CMP	(PSP),	#DEL		; Delete?
+	BEQ	DCHAR0			;
+	INC	(PSP)			;
+	CMP	(PSP),	#40		; Control?
+	BLT	DCHAR1			; Yes
+	MOV	CP,	(PSP)		; No- so output
+	INC	(PSP)			;
+	MOV	R0,	-(PSP)		;
+	JSR	PC,	$OCHAR		;
+	BR	DCHAR4			;
+; Control character to be printed	;
+DCHAR0:	CLR	(PSP)			; <DEL> is first char in table
+DCHAR1:	MOV	(PSP),	-(PSP)		; Check if printable
+	ASL	(PSP)			;
+	ADD	(PSP)+,	(PSP)		;
+	ADD	#CONT,	(PSP)		;
+	TSTB	@(PSP)			; Printable?
+	BEQ	DCHAR3			; Yes
+	MOV	(PSP),	R0		; No- print '<NAM>'
+	MOV	CP,	(PSP)		;
+	INC	(PSP)			;
+	MOV	#'<,	-(PSP)		;
+	JSR	PC,	$OCHAR		; '<
+	MOV	#3,	R1		; Three chars in name
+DCHAR2:	MOV	CP,	-(PSP)		;
+	INC	(PSP)			;
+	MOVB	(R0)+,	R2		;
+	MOV	R2,	-(PSP)		;
+	JSR	PC,	$OCHAR		; '<NAM
+	SOB	R1,	DCHAR2		;
+	MOV	CP,	-(PSP)		;
+	INC	(PSP)			;
+	MOV	#'>,	-(PSP)		;
+	JSR	PC,	$OCHAR		; '<NAM>'
+	BR	DCHAR4			;
+; Printable control character found	;
+DCHAR3:	ASL	R0			;
+	JMP	@CCPRT-16(R0)		; Jump to routine
+
+; Bell output routine
+DBELL:	MOV	CP,	(PSP)		; Output bell
+	MOV	#BELL,	-(PSP)		;
+	JSR	PC,	$OCHAR		;
+	BR	DCHAR4
+
+; Tab output routine
+DTAB:	MOV	CP,	R0		; Find number of <SP>s
+	BIS	#177770, R0		;
+	TST	(PSP)+			; Housekeep
+DTAB1:	MOV	CP,	-(PSP)		; O/p <SP>
+	INC	(PSP)			;
+	MOV	#SPACE,	-(PSP)		;
+	JSR	PC,	$OCHAR		;
+	INC	R0			;
+	BLT	DTAB1			;
+	BR	DCHAR4
+
+; End of line output routine
+DEOL:	CLR	(PSP)			; Emulate <EOL> with
+	MOV	#CR,	-(PSP)		; <CR><LF>
+	JSR	PC,	$OCHAR		;
+	CLR	-(PSP)			;
+	MOV	#LF,	-(PSP)		;
+	JSR	PC,	$OCHAR		;
+
+DCHAR4:	JSR	PC,	RR
+	RTS	PC			;<<
+;
+;	T E X T   O U T P U T
+;
+;	Outputs string of characters in the form:-
+;ADDR:	.WORD	Number of characters (unsigned)
+;	.ASCII	/String/
+;	.EVEN
+;
+$DTEXT:	JSR	PC,	RS
+	MOV	(PSP)+,	R1		; Get string address
+	MOV	(R1)+,	R0		; Get length
+	BEQ	DTEXT2			; Forget empty string
+DTEXT1:	MOVB	(R1)+,	R2		; O/p characters
+	MOV	R2,	-(PSP)		;
+	JSR	PC,	$OCHAR		;
+	SOB	R0,	DTEXT1		; 
+DTEXT2:	JSR	PC,	RR		;
+	RTS	PC			;<<
+;
+;	S E T   W A R N I N G  I N H I B I T
+;
+;	Sets up the warning inhibit flag to stop or allow
+;	printing of warning messages.
+;
+$SWRNI:	MOV	(PSP)+,	WIF		; Set flag
+	RTS	PC			;<<
+;
+;	W A R N I N G
+;
+;	Outputs warning message if inhibit flag allows.
+;	Then returns to calling program.
+;
+$WARN:	TST	WIF			; Test inhibit flag
+	BNE	WARN1			; Skip if not false
+	MOV	#EOL,	-(PSP)		;
+	JSR	PC,	$DCHAR		;
+	JSR	PC,	$DTEXT		; else print message
+	MOV	#EOL,	-(PSP)		;
+	JSR	PC,	$DCHAR		;
+	RTS	PC			;<<
+WARN1:	TST(PSP)+			; Housekeep
+	RTS	PC			;<<
+;
+;	E R R O R
+;
+;	Outputs error message
+;	Clears keyboard input buffer
+;	and performs exit
+;
+$ERROR:	MOV	#EOL,	-(PSP)		;
+	JSR	PC,	$DCHAR		; Print message
+	JSR	PC,	$DTEXT		;
+	MOV	#EOL,	-(PSP)		;
+	JSR	PC,	$DCHAR		;
+	MOV	KIBIN,	KIBOUT		; Lose all typeahead
+	MOV	PIBIN,	PIBOUT		; characters
+	CLR	NOL			; No lines input
+	JMP	$EXIT			;<<
+	.PAGE
+;
+;	K E Y B O A R D
+;
+.IF	NDF, TTY
+DKS	=	177520			; Status
+DKB	=	177524			; Buffer
+DKIE	=	40			; Interrupt enable bit
+DKIV	=	114			; Interrupt vector
+.IFF
+DKS	=	177560			; TTY keyboard status
+DKB	=	177522			; TTY keyboard buffer
+DKIE	=	100			; Interrupt enable bit
+DKIV	=	60			; Interrupt vector
+.ENDC
+;
+;	B U F F E R S
+;
+KIB:					; Keyboard input buffer
+	.BLKB	100
+KIBC:					; Buffer ceiling
+
+KIBIN:	.WORD	KIB			; Next in byte pointer
+KIBOUT:	.WORD	KIB			; Next out byte pointer
+
+PIB:					; Processed input buffer
+	.BLKB	400
+PIBC:					; Buffer ceiling
+
+PIBIN:	.WORD	PIB			; Next in pointer
+PIBOUT:	.WORD	PIB			; Next out pointer
+
+ECHOF:	.WORD	-1			; Echo flag (true)
+
+TEIF:	.WORD	0			; Temporary escape inhibit
+
+EIF:	.WORD	-1			; Escape inhibit flag (true)
+
+NOL:	.WORD	0			; Number of lines input
+
+ESCAPE:	.WORD	^D12
+	.ASCII	/<< Escape >>/
+	.EVEN
+
+FKB:	.WORD	^D23
+	.ASCII	/?? Keyboard buffer full/
+	.EVEN
+
+LOV:	.WORD	^D16
+	.ASCII	/?? Line overflow/
+	.EVEN
+
+IFNER:	.WORD	^D28
+	.ASCII	/!! Input filename- File open/
+	.EVEN
+	.PAGE
+;
+;	I N T E R R U P T   S E R V I C E
+;
+;	This constitutes the interrupt service routine for
+;	the keyboard input.
+;	If character = <ESC> and escape allowed by user then
+;	force a quick exit from UUO routines (if in them)
+;	and escape.
+;	Type warning if buffer overflow.
+;
+KISR:	BICB	#DKIE,	@#DKS		; Disable interrupts
+	MOVB	@#DKB,	-(SP)		; Get character
+	BIC	#177600, (SP)		; Strip parity
+	CMP	(SP),	#ESC		; Escape ?
+	BNE	KIS1			; No
+	TST	EIF			; Yes- Inhibit ?
+	BNE	KIS1			; Yes
+	MOV	DOBIN,	DOBOUT		; Clear o/p buffer
+	TST	TEIF			; Wait till dun exec call ?
+	BNE	KIS0			; Yes
+	BISB	#DKIE,	@#DKS		; No- Enable interrupts
+	MOV	#ESCAPE, -(PSP)		; and escape
+	JMP	$ERROR			; back to SUSIE
+; Character o.k....			;
+KIS0:	COMB	(SP)			; Indicate escape attempt
+	MOV	(SP)+,	TEIF		; made during exec call
+	MOV	#EOL,	-(SP)		; Get out of inline routine
+	MOV	#1,	LKC		; Get out of delay routine
+KIS1:	MOV	KIBOUT,	-(SP)		; Buffer full?
+	SUB	KIBIN,	(SP)		;
+	BIC	#177700, (SP)		;
+	DEC	(SP)+			;
+	BNE	KIS2			; No
+	MOV	@#PSW,	(SP)		; Yes- Allow o/p to empty
+	CLR	@#PSW			;
+	MOV	#FKB,	-(PSP)		; and warn user
+	JSR	PC,	$WARN		;
+	MOV	(SP)+,	@#PSW		;
+	BR	KIS4			;
+; Buffer o.k....			;
+KIS2:	MOVB	(SP),	@KIBIN		; Put in buffer
+	INC	KIBIN			; Step pointer
+	CMP	KIBIN,	#KIBC		; Gone over end ?
+	BNE	KIS3			; No
+	MOV	#KIB,	KIBIN		; Yes- reset
+KIS3:	CMPB	(SP)+,	#EOL		; End of line?
+	BNE	KIS4			; No
+	INC	NOL			; Yes- increment count
+KIS4:	BISB	#DKIE,	@#DKS		; Enable interrupts
+	RTI				;<<
+	.PAGE
+;	The following routines are subroutines for the
+;	command device UUOs.
+;
+;
+;	C H E C K   A L P H A N U M E R I C   C H A R A C T E R
+;
+;	For filename input:-
+;	If character is alphanumeric then
+;		return RAD50 value and skip on return
+;	else
+;		return character and do straight return
+;
+CHAN:	CMP	(PSP),	#'0		; Get numeric?
+	BLT	CHAN3			; No
+	CMP	(PSP),	#'9		; Maybe?
+	BGT	CHAN1			; Mmmmmm- maybe alpha
+	SUB	#60-36,	(PSP)		; Yes- return RAD50 value
+	BR	CHAN2			;
+CHAN1:	CMP	(PSP),	#'A		; Is it alpha?
+	BLT	CHAN3			; No
+	CMP	(PSP),	#'Z		; Maybe?
+	BGT	CHAN3			; No
+	SUB	#101-1,	(PSP)		; Yes- return RAD50 value
+CHAN2:	TST	(R4)+			; Good return
+CHAN3:	RTS	R4			;<<
+.IF	NDF, TTY
+;
+;	D I S P L A Y   B A C K S P A C E
+;
+;	Display backspace on VDU
+;	Allows character to be physically erased
+;	when 'rubbing out'.
+;
+DBSP:	MOV	CP,	-(PSP)		; Get cursor position
+	DEC	(PSP)			; will become one less
+	MOV	#BSP,	-(PSP)		; Ascii backspace
+	JSR	PC,	$OCHAR		; direct display
+	RTS	PC			;<<
+.ENDC
+;
+;	E R A S E
+;
+;	Performs erasure of last character in process buffer.
+;	If display for output then
+;		physically erase
+;	else
+;		print "#character"
+;
+ERASE:	DEC	PIBIN			; Erase character
+	CMP	PIBIN,	#PIB		; Gone over end ?
+	BHIS	ERASE1			; No
+	MOV	#PIBC,	PIBIN		; Yes- reset
+ERASE1:	MOVB	@PIBIN,	R1		; character in R1
+.IF	NDF, TTY
+	CMPB	R1,	#BELL		; Bell?
+	BEQ	ERASE4			; Yes- ignore
+	CMPB	R1,	#TAB		; Tab?
+	BNE	ERASE2			; No
+	MOV	CP,	R2		; Get cursor position
+	SUB	(PSP)+,	R2		; Remove last tab setting
+	BEQ	ERASE4			;
+	BR	ERASE3			;
+; Check for 'control' or 'delete'	;
+ERASE2:	TST	ECHOF			; Is it worthwhile?
+	BEQ	ERASE4			; No
+	MOV	#1,	R2		; Yes- one <BS>
+	INC	R1			;
+	BIC	#177600, R1		;
+	CMPB	R1,	#40		; Control or delete?
+	BGT	ERASE3			; No
+	MOV	#5,	R2		; Yes- Five <BS>s
+ERASE3:	JSR	PC,	DBSP		; Display backspace
+	MOV	#SPACE,	-(PSP)		; then space
+	JSR	PC,	$DCHAR		;
+	JSR	PC,	DBSP		; and final backspace
+	SOB	R2,	ERASE3		; till all done
+.IFF
+	MOV	#'#,	-(PSP)		; TTY delete is different
+	JSR	PC,	$DCHAR		;
+	MOV	R1,	-(PSP)		; show the character
+	JSR	PC,	$DCHAR		;
+.ENDC
+ERASE4:	RTS	PC			;<<
+;
+;	P R O C E S S   B U F F E R
+;
+;	Processes line of text from keyboard buffer.
+;	Takes care of <DEL> and <CAN> characters.
+;	Returns last processed character, - usually
+;	<EOL> but not if less than one line has been input.
+;
+PROKIB:	JSR	PC,	RS
+	CLR	R0			; Contains last char processed
+PKB1:	CMP	KIBIN,	KIBOUT		; Buffer empty
+	BEQ	PKB10			; Yes
+	MOV	@KIBOUT, R0		; No- Get char
+	INC	KIBOUT			; Step pointer
+	CMP	KIBOUT,	#KIBC		; Gone over end ?
+	BNE	PKB2			; No
+	MOV	#KIB,	KIBOUT		; Yes- reset
+PKB2:	CMP	R0,	#DEL		; Delete ?
+	BNE	PKB3			; No
+	CMP	PIBIN,	PIBOUT		; Yes- char available?
+	BEQ	PKB1			; No
+	JSR	PC,	ERASE		; Yes- erase it
+	BR	PKB1			; Loop back
+PKB3:	CMP	R0,	#CAN		; Cancel?
+	BNE	PKB6			; No
+	CMP	PIBIN,	PIBOUT		; Yes- char available?
+	BEQ	PKB1			; No
+.IF	NDF, TTY
+PKB4:	JSR	PC,	ERASE		; Yes- erase it
+	CMP	PIBIN,	PIBOUT		; another?
+	BNE	PKB4			; Yes- keep erasing
+.IFF
+	MOV	PIBIN,	PIBOUT		; Cancel on TTY by
+	MOV	#EOL,	-(PSP)		; outputting end of line
+	JSR	PC,	$DCHAR		;
+.ENDC
+	BR	PKB1			; Loop back
+PKB6:	MOV	PIBOUT,	-(SP)		; Check line overflow
+	SUB	PIBIN,	(SP)		;
+	BIC	#177400, (SP)		;
+	DEC	(SP)+			; Overflow ?
+	BNE	PKB5			; No
+	MOV	#LOV,	-(PSP)		; Yes- inform user
+	JSR	PC,	$WARN		;
+	BR	PKB10			;
+PKB5:
+.IF	NDF, TTY
+	CMP	R0,	#TAB		; <TAB> ?
+	BNE	PKB7			; No
+	MOV	CP,	-(PSP)		; Yes- store cursor position 
+.ENDC
+PKB7:	TST	ECHOF			; Echo it?
+	BEQ	PKB8			; No
+	MOV	R0,	-(PSP)		; Yes
+	JSR	PC,	$DCHAR		;
+PKB8:	MOVB	R0,	@PIBIN		; Store in processed buffer
+	INC	PIBIN			; Step pointer
+	CMP	PIBIN,	#PIBC		; Gone over end ?
+	BNE	PKB9			; No
+	MOV	#PIB,	PIBIN		; Yes- reset
+PKB9:	CMP	R0,	#EOL		; <EOL> ?
+	BNE	PKB1			; No- loop back
+PKB10:	MOV	R0,	-(PSP)		; Return last char
+	JSR	PC,	RR		;
+	RTS	PC			;<<
+	.PAGE
+;
+;	U S E R   S E R V I C E
+;
+;	The following UUOs are concerned with character
+;	input.
+;
+;
+;	C H A R A C T E R   T E S T
+;
+;	Return next character in sequence in input buffers.
+;	Return <EOL> if no characters.
+;	Do not process <DEL> or <CAN>
+;	Echo character if needed.
+;
+$TCHAR:	CMP	PIBIN,	PIBOUT		; Character processed ?
+	BEQ	TCHAR2			; No
+	MOVB	@PIBOUT, -(SP)		; Yes- get char
+	INC	PIBOUT			; Step pointer
+	CMP	PIBOUT,	#PIBC		; Gone over end ?
+	BNE	TCHAR1			; No
+	MOV	#PIB,	PIBOUT		; Yes- reset
+TCHAR1:	BR	TCHAR5			; Go check <EOL>
+; No character processed
+TCHAR2:	CMP	KIBIN,	KIBOUT		; Another available ?
+	BNE	TCHAR3			; Yes
+	CLR	-(SP)			; No- return null
+	BR	TCHAR6			; Go to end
+TCHAR3:	MOVB	@KIBOUT, -(SP)		; Get char
+	INC	KIBOUT			; Step pointer
+	CMP	KIBOUT,	#KIBC		; Gone over end ?
+	BNE	TCHAR4			; No
+	MOV	#KIB,	KIBOUT		; Yes- reset
+TCHAR4:	TST	ECHOF			; Echo ?
+	BEQ	TCHAR5			; No
+	MOV	(SP),	-(PSP)		; Yes
+	JSR	PC,	$DCHAR		;
+TCHAR5:	CMPB	(SP),	#EOL		; <EOL> ?
+	BNE	TCHAR6			; No
+	DEC	NOL			; Yes- decrement count
+TCHAR6:	MOV	(SP)+,	-(PSP)		; Return character
+	CLRB	1(PSP)			; Clear high byte
+	RTS	PC			;<<
+;
+;	C H A R A C T E R   I N P U T
+;
+;	Return next character, from input buffer, that is not <NUL>
+;
+INCHR1:	TST	(PSP)+			;
+$INCHR:	JSR	PC,	$TCHAR		; Test for character
+	TST	(PSP)			; Null ?
+	BEQ	INCHR1			; Yes- wait till not
+	RTS	PC			; No- return it
+;
+;	L I N E   T E S T
+;
+;	If line available then return next character in line
+;	else return <NUL>.
+;	If line available then process <DEL> & <CAN> before
+;	returning the character.
+;
+$TLINE:	TST	NOL			; Number of lines>=1 ?
+	BGT	TLINE1			; Yes
+	CLR	-(PSP)			; No- return NULL
+	RTS	PC			;<<
+TLINE1:
+.IIF	NDF, TTY, MOV	PSP, -(SP)	; Store PSP (if tabs)
+	CMP	PIBIN,	PIBOUT		; Processing empty ?
+	BNE	TLINE2			; No
+	JSR	PC,	PROKIB		; Yes- so process
+	TST	(PSP)+			; Forget returned char
+TLINE2:
+.IIF	NDF, TTY, MOV	(SP)+, PSP	; Forget tab settings
+	JSR	PC,	$TCHAR		; Get char
+	RTS	PC			;<<
+;
+;	L I N E   I N P U T
+;
+;	Wait for a line to be input before returning character.
+;	Process line while waiting.
+;
+$INLIN:	CMP	PIBIN,	PIBOUT		; Have chars been processed ?
+	BNE	INLIN2			; Yes- so we're O.K.
+.IIF	NDF, TTY, MOV	PSP, -(SP)	; No- save stack (if tabs)
+INLIN1:	JSR	PC,	PROKIB		; Process keyboard buffer
+	CMP	(PSP)+,	#EOL		; till end of line
+	BNE	INLIN1			; had been found
+.IIF	NDF, TTY, MOV	(SP)+, PSP	; Forget tab settings
+INLIN2:	JSR	PC,	$TCHAR		; and get character
+	RTS	PC			;<<
+;
+;	E N D   O F   L I N E   I N P U T
+;
+;	Test last character input (on parameter stack) for
+;	<EOL> else input until <EOL> found.
+;
+INEOL1:	JSR	PC,	$INLIN		; Get next character
+$INEOL:	CMP	(PSP)+,	#EOL		; Last char = <EOL> ?
+	BNE	INEOL1			; No
+	RTS	PC			;<< Yes- return
+;
+;	I N P U T   F I L E N A M E
+;
+;	Input filename into LFD, using $INLIN. Return
+;	last illegal character on parameter stack.
+;	If no legal characters then do not disturb
+;	the contents of the LFD (for default names).
+;
+$INFNM:	JSR	PC,	RS
+	MOV	(PSP)+,	R0		; Get LFD address
+;++
+; @Todo add disk stuff
+;	TSTB	LFDOPN(R0)		; Is LFD currently active ?
+;	BEQ	INFNM1			; No
+;	MOV	#IFNER,	-(PSP)		; Yes- error
+;	JMP	$ERROR			;<<
+;++
+INFNM1:	MOV	#2,	R0		; Two words/name
+INFNM2:	CLR	R1			;
+	MOV	#3,	R1		; Three chars/word
+INFNM3:	JSR	PC,	$INLIN		; Get a character
+	JSR	R4,	CHAN		; Alphanumeric ?
+	BR	INFNM5			; No
+	MUL	#50,	R1		; Yes- Add to filename
+	ADD	(PSP)+,	R1		;
+	SOB	R3,	INFNM3		; Check if done 3 chars
+	MOV	R1,	(R0)+		; Yes- store in LFD
+	SOB	R2,	INFNM2		; Check if done 2 words
+INFNM4:	JSR	PC,	$INLIN		; Read till non-alphanumeric
+	JSR	R4,	CHAN		;
+	BR	INFNM7			;
+	BR	INFNM4			;
+INFNM5:	MUL	#50,	R1		; Left justify RAD50 value
+	SOB	R3,	INFNM5		;
+	DEC	R2			; Should default value be used ?
+	BNE	INFNM6			; Possibly
+	MOV	R1,	(R0)+		; No- set up second word
+	BR	INFNM7			;
+INFNM6:	TST	R1			; Default ?
+	BEQ	INFNM7			; Yes
+	MOV	R1,	(R0)+		; No- set up first word
+	CLR	(R0)+			; & second word
+INFNM7:	JSR	PC,	RR		;
+	RTS	PC			;<<
+;
+;	S E T   E C H O
+;
+;	Set up value of echo flag.
+;	If = 0 then no input characters will be echoed
+;	otherwise automatic echoing.
+;
+$STECO:	MOV	(PSP)+,	ECHOF		; Set up echo flag
+	RTS	PC			;<<
+;
+;	S E T   E S C A P E   I N H I B I T
+;
+;	Set up value of escape inhibit flag.
+;	If <> 0 then <ESC> on input will not force
+;	user program to exit.
+;
+$SESCI:	MOV	(PSP)+,	EIF		; Set escape inhibit flag
+	RTS	PC			;<<
+	.PAGE
+	.SBTTL	DISC CONTROL ROUTINES
+;	@TODO DISK stuff
+	.PAGE
+	.SBTTL	DESPATCH SERVICe
+;
+; The following routine provides the despatch service for
+; all user executive calls (UUOs)
+; These include all command device i/o procedures and all the
+; disc file handling routines.
+;
+; Calls are made by EMT 2(N+1) for the n th element in the the table.
+; Parameters are stacked on the parameters stack and answers
+; are returned threre.
+;
+;
+;	U S E R   D E S P A T C H
+;
+EMTIV	=	30			; Emulator trap interrupt vector
+;
+;	B U F F E R S
+;
+DST:					; Despatch services table
+	.WORD	$EXIT			; Exit
+	.WORD	$DELAY			; Delay
+	.WORD	$CPOS			; Cursor position
+	.WORD	$OCHAR			; Direct output
+	.WORD	$DCHAR			; Controlled output
+	.WORD	$DTEXT			; Text output
+	.WORD	$SWRNI			; Set warning inhibit
+	.WORD	$WARN			; Warning
+	.WORD	$ERROR			; Error
+	.WORD	$TCHAR			; Character test
+	.WORD	$INCHR			; Character input
+	.WORD	$TLINE			; Line test
+	.WORD	$INLIN			; Line input
+	.WORD	$INEOL			; End of Line input
+	.WORD	$INFNM			; Filename input
+	.WORD	$STECO			; Set echo
+	.WORD	$SESCI			; Set escape inhibit
+	; @TODO Disc control routines
+DSTT:					; Table top
+;
+;	S E R V I C E   R O U T I N E
+;
+UDISR:	MOV	(SP),	-(SP)		; Get trap instruction
+	SUB	#2,	(SP)		;
+	MOV	@(SP)+,	-(SP)		;
+	BIC	#EMT-1,	(SP)		;
+	CMP	(SP),	#DSTT-DST	; Test legality
+	BGE	UDISR1			; Not legal
+	ADD	#DST,	(SP)		; Legal
+	MOV	@(SP)+,	-(SP)		; Go to routine
+	MOV	#-1,	TEIF		; Inhibit escape from exec calls
+	JSR	PC,	@(SP)+		;
+	INC	TEIF			; Reset inhibit flag
+	BEQ	UDISR2			; If =0 then O.K.
+	CLR	TEIF			; Clear for next time
+	MOV	#ESCAPE, -(PSP)		; and escape
+	JMP	$ERROR			;
+UDISR1:	TST	(SP)+			; Housekeep
+UDISR2:	RTI				;<<
+	.PAGE
+	.SBTTL	ERROR TRAP ROUTINES
+;
+;	E R R O R   T R A P   S E R V I C E
+;
+UNIV	=	0			; Unknown error
+TOIV	=	4			; Time out & others
+IRIV	=	10			; Illegal or reserved instr
+BPIV	=	14			; Breakpoint
+PFIV	=	24			; Power fail
+TRPIV	=	34			; Trap instruction
+;
+;	B U F F E R S
+;
+UNEM:	.WORD	^D29
+	.ASCII	/** Trap0- Unknown error ?? **/
+	.EVEN
+
+TOEM:	.WORD	^D24
+	.ASCII	/** Trap4- Time out ?? **/
+	.EVEN
+
+IREM:	.WORD	^D36
+	.ASCII	/** Trap10- Illegal instruction ?? **/
+	.EVEN
+
+BPEM:	.WORD	^D24
+	.ASCII	/** Trap14- Breakpoint **/
+	.EVEN
+
+TREM:	.WORD	^D30
+	.ASCII	/** Trap34- Trap instruction **/
+	.EVEN
+;
+;	U N K N O W N   E R R O R
+;
+UNISR:	MOV	#UNEM,	-(PSP)
+	BR	TEXIT
+;
+;	T I M E   O U T   &   O T H E R S
+;
+TOISR:	MOV	#TOEM,	-(PSP)
+	BR	TEXIT
+;
+;	I L L E G A L   I N S T R U C T I O N
+;
+IRISR:	MOV	#IREM,	-(PSP)
+	BR	TEXIT
+;
+;	B R E A K P O I N T
+;
+BPISR:	MOV	#BPEM,	-(PSP)
+	BR	TEXIT
+;
+;	P O W E R   F A I L   ! !
+;
+PFISR	=	$EXIT			; Quick !!!!!
+;
+;	T R A P   I N S T R U C T I O N
+;
+TRPISR:	MOV	#TREM,	-(PSP)
+
+TEXIT:	JMP	$ERROR
+	.PAGE
+	.SBTTL	COMMAND DECODER
+;
+;	C O M M A N D   D E C O D E R
+;
+IOTIV	=	20			; IOT Interrupt Vector
+IOTISR	=	SUSIE			; Service routine is complete restart
+;
+;	B U F F E R S
+;
+FILE:	.RAD50	/      /		; Filename
+	.WORD	0, 0			; Chain pointers
+	.BYTE	0, 0			; Open/closed - EOF
+	.WORD	0			; Hash
+	.WORD	0, 0			; Buffer and pointer
+
+HELLO:	.WORD	^D36
+	.ASCII	/Hi there.../<EOL>
+	.ASCII	/SUSIE at your service./<EOL><EOL>
+	.EVEN
+
+PROMPT:	.WORD	^D3
+	.ASCII	<EOL>/# /
+	.EVEN
+	.PAGE
+;
+;	S U S I E
+;
+SUSIE:	RESET				; Init the UNIBUS.....
+	MOV	#100000, SP		; Set link stack
+	MOV	#40000,	PSP		; Set parameter stack
+	CLR	@#PSW			;
+; Device initialisation
+; N.B. Disc done by bootstrap
+	BISB	#DKIE,	@#DKS		; Let user start typing
+.IF	NDF, TTY
+	CLR	-(PSP)			; Clear screen
+	MOV	#FF,	-(PSP)		;
+	JSR	PC,	$OCHAR		;
+.IFF
+	MOV	#EOL,	-(PSP)		; O/p <CR><LF>
+	JSR	PC,	$DCHAR		;
+.ENDC
+	MOV	#HELLO,	-(PSP)		; Say Howdy !!!!!
+	JSR	PC,	$DTEXT		;
+; Table initialisation
+;++
+; @Todo disk stuff
+;	MOV	#BITMAP, -(PSP)		; Read bitmap from disc
+;	CLR	-(PSP)			; Sector zero
+;	MOV	#DKREAD, -(PSP)		;
+;	JSR	PC,	DDA		;
+;	MOV	#2,	R0		; Two sectors for directory
+;	MOV	#FILES+^D512, R1	; Offset into directory
+;SUSIE1:	MOV	R1,	-(PSP)		; Read directory from disk
+;	MOV	R0,	-(PSP)		;
+;	MOV	#DKREAD, -(PSP)		;
+;	JSR	PC,	DDA		;
+;	SUB	#^D512,	R1		;
+;	SOB	R0,	SUSIE1		;
+;	MOV	#^D128,	R0		; Close all files
+;SUSIE2:	CLRB	FST-1(R0)		;
+;	SOB	R0,	SUSIE2		;
+;--
+EVER:	MOV	#-1,	EIF		; Inhibit escapes
+	MOV	#PROMPT, -(PSP)		; Display the prompt
+	JSR	PC,	$DTEXT		;
+	MOV	#FILE,	R0		; No default name
+	CLR	(R0)			;
+	MOV	R0,	-(PSP)		; Input the filename
+	JSR	PC,	$INFNM		;
+	TST	(R0)			; Possible name ?
+	BNE	EVER1			; Yes
+	JSR	PC,	$INEOL		; No- read till end of line
+	BR	EVER			; Start again
+EVER1:	MOV	R0,	(PSP)		; Yes- so try and run
+	CLR	EIF			; Allow escapes
+;	JMP	$RUN			; @Todo run
+	JMP	EVER			; @Todo remove
+SUETOP:					;*****	Top core location for SUSIE
+	.PAGE
+	.SBTTL	INTERRUPT VECTOR INITIALIZATION
+.	=	UNIV
+	.WORD	UNISR, 0*40
+.	=	TOIV
+	.WORD	TOISR, 0*40
+.	=	IRIV
+	.WORD	IRISR, 0*40
+.	=	BPIV
+	.WORD	BPISR, 0*40
+.	=	IOTIV
+	.WORD	IOTISR, 0*40
+.	=	PFIV
+	.WORD	PFISR, 7*40
+.	=	EMTIV
+	.WORD	UDISR, 0*40
+.	=	TRPIV
+	.WORD	TRPISR, 0*40
+.	=	LKIV
+	.WORD	LKISR, 6*40
+.	=	DDIV
+	.WORD	DISR, 5*40
+.	=	DKIV
+	.WORD	KISR, 5*40
+
+	.END	SUSIE
