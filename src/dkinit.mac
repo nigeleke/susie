@@ -1,0 +1,180 @@
+	.NLIST	TTM, TOC
+	.TITLE	DISC INITIALIZATION FOR SUSIE
+;************************************************
+;*						*
+;*						*
+;*		D I S C   I N I T		*
+;*		- - - -   - - - -		*
+;*						*
+;*						*
+;************************************************
+;
+;	Disc initialization for SUSIE
+;
+;	This program contains all the routines necessary
+;	for a small executive.  These include:-
+;		1) Command device I/O
+;		2) File handling
+;		3) Error handling
+;		4) Control routine
+;
+	.ASECT
+.	=	200
+	JMP	DKINIT
+;
+;	R E G I S T E R   M A C R O S
+;
+R0	=	%0			; General registers
+R1	=	%1			;
+R2	=	%2			;
+R3	=	%3			;
+R4	=	%4			;
+PSP	=	%5			;
+SP	=	%6			; Stack pointer
+PC	=	%7			; Program counter
+	.PAGE
+	.SBTTL	General Routines
+;
+;	R E G I S T E R   S A V E
+;
+;	Saves registers (R0-R4) on stack
+;
+RS:	MOV	(SP)+,	-(PSP)		; Save return address
+	MOV	R0,	-(SP)		; Save registers
+	MOV	R1,	-(SP)		;
+	MOV	R2,	-(SP)		;
+	MOV	R3,	-(SP)		;
+	MOV	R4,	-(SP)		;
+	JMP	@(PSP)+			;<<
+;
+;	R E G I S T E R   R E C A L L
+;
+;	Recalls registers (R4-R0) from stack
+;
+RR:	MOV	(SP)+,	-(PSP)		; Save return address
+	MOV	(SP)+,	R4		; Restore registers
+	MOV	(SP)+,	R3		;
+	MOV	(SP)+,	R2		;
+	MOV	(SP)+,	R1		;
+	MOV	(SP)+,	R0		;
+	JMP	@(PSP)+			;<<
+	.PAGE
+;
+;	D I S C   R O U T I N E S
+;
+DKDS	=	177400			; Drive status
+DKER	=	177402			; Errors
+DKCS	=	177404			; Control status
+DKWC	=	177406			; Word count
+DKBA	=	177410			; Current bus status
+DKDA	=	177412			; Disc address
+DKMR	=	177414			; Maintenance
+DKDB	=	177416			; Data buffer
+
+DKSET	=	^B0000			; Disk reset
+DKREAD	=	^B0100			; Read function
+DKWRIT	=	^B0100			; Write function
+;
+;	D I R E C T   D I S C   A C C E S S
+;
+DDA:	JSR	PC,	RS		;
+	MOV	(PSP)+,	R0		; Get transfer direction
+	MOV	(PSP)+,	R3		; Get block address (low order)
+	CLR	R2			; R2 (high order block address)
+	DIV	#^D12,	R2		; Convert block to sector
+	MOV	R2,	R1		;
+	MUL	#^D16,	R1		;
+	ADD	R3,	R1		; (R3 is the rem of division)
+	MOV	(PSP)+,	R2		; Get core address
+	MOV	#^D8,	R3		; Repeat 8 times if error
+DDA1:	MOV	#DKDA+2, R4		; Set up disc transfer:-
+	MOV	R1,	-(R4)		; Disc address
+	MOV	R2,	-(R4)		; Bus address
+	MOV	#^D-256, -(R4)		; Word count (1 sector)
+	MOV	R0,	-(R4)		; Function (r/w)
+	INC	(R4)			; Go
+DDA2:	TSTB	(R4)			; Done ?
+	BPL	DDA2			; No- wait
+	TST	(R4)			; Yes- error ?
+	BPL	DDA3			; No- finish
+	SOB	R3,	DDA1		; Yes- check repeat count
+	HALT				;
+	BR	.-2			;
+DDA3:	JSR	PC,	RR		;
+	RTS	PC			;<<
+	.PAGE
+	.SBTTL	Initialization
+PRS	=	177550
+PRB	=	177552
+;
+;	B U F F E R S
+;
+BUFFER:	.BLKW	^D256
+BUFCEI:					; Ceiling
+
+BITTBL:	.BYTE	377, 177, 77, 37, 17, 7, 3, 1
+
+BITMAP:	.BLKW	^D256
+;
+;	I N I T I A L I Z A T I O N
+;
+DKINIT:	RESET
+	HALT				; Remove OpSys disk, insert Susie disk
+	MOV	#100000, SP		; Set up link stack
+	MOV	#40000,	PSP		; Set up parameter stack
+	CLR	-(PSP)			;
+	CLR	-(PSP)			;
+	MOV	#DKSET,	-(PSP)		;
+	MOV	#^D512,	R0		; Clear file directory
+INIT.1:	CLRB	BUFFER-1(R0)		;
+	SOB	R0,	INIT.1		;
+	MOV	#2,	R0		;
+INIT0:	MOV	#BUFFER, -(PSP)		; and write file directory
+	MOV	R0,	-(PSP)		;
+	MOV	#DKWRIT, -(PSP)		;
+	JSR	PC,	DDA		;
+	SOB	R0,	INIT0		;
+INIT1:	INC	@#PRS			; and write susie
+INIT2:	TSTB	@#PRS			;
+	BPL	INIT2			;
+	DEC	@PRB			;
+	BNE	INIT1			; Wait til '1' found
+	MOV	#1,	BUFFER		; Put in buffer
+	MOV	#BUFFER+1, R0		; Set up buffer pointer
+	MOV	#3,	R1		; Start at disk block 3
+INIT3:	INC	@#PRS			;
+INIT4:	BIT	#100200, @#PRS		; Get byte
+	BMI	END			; If error then end
+	BEQ	INIT4			;
+	MOVB	@#PRB,	(R0)+		; Put in buffer
+	CMP	R0,	#BUFCEI		; Filled buffer ?
+	BNE	INIT3			; No
+	MOV	#BUFFER, -(PSP)		; Yes- write this buffer ?
+	MOV	(PSP),	R0		; Set for next buffer
+	MOV	R1,	-(PSP)		; This block
+	INC	R1			; Next block
+	MOV	#DKWRIT, -(PSP)		; Writing to disc
+	JSR	PC,	DDA		; Do the disc access
+	BR	INIT3			; and fill the next block
+END:	MOV	#BUFFER, -(PSP)		; Write last buffer
+	MOV	R1,	-(PSP)		;
+	MOV	#DKWRIT, -(PSP)		;
+	JSR	PC,	DDA		;
+	MOV	#^D256,	R0		; Set up bitmap
+END1:	MOVB	#-1,	BITMAP-1(R0)	; All blocks free
+	SOB	R0,	END1		;
+	INC	R1			; First free block
+END2:	CMP	R1,	#^D8		; Set used blocks in map
+	BLT	END3			;
+	CLRB	BITMAP(R0)		;
+	SUB	#^D8,	R1		;
+	INC	R0			;
+	BR	END2			;
+END3:	MOVB	BITTBL(R1), BITMAP(R0)	;
+	MOV	#BITMAP, -(PSP)		; Write the bitmap
+	CLR	-(PSP)			; to sector zero
+	MOV	#DKWRIT, -(PSP)		; on disc
+	JSR	PC,	DDA		;
+	HALT				; ***** and stop
+	BR	.-2
+	.END	DKINIT
