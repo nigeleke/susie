@@ -1044,10 +1044,12 @@ EVER1:	MOV	R0,	(PSP)		; Yes- so try and run
 SUETOP:					;*****	Top core location for SUSIE
 	.PAGE
 	.SBTTL	INTERRUPT VECTOR INITIALIZATION
-
+;++
+; @Todo remove
 STOP:	HALT
 	HALT
 	JMP	SUSIE
+;--
 
 .	=	UNIV
 	.WORD	STOP, 0 ; UNISR, 0*40
@@ -1083,4 +1085,3 @@ STOP:	HALT
 	.WORD	KISR, 5*40
 
 	.END	SUSIE
-
