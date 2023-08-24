@@ -1,0 +1,181 @@
+	.NLIST	TTM, TOC
+	.TITLE	DISC BOOTSTRAP FOR SUSIE
+;************************************************
+;*						*
+;*						*
+;*		B O O T S T R A P		*
+;*		- - - - - - - - -		*
+;*						*
+;*						*
+;************************************************
+;
+;	Disc bootstrap for SUSIE
+;
+	.ASECT
+.	=	20000
+	JMP	BOOT
+;
+;	R E G I S T E R   M A C R O S
+;
+R0	=	%0			; General registers
+R1	=	%1			;
+R2	=	%2			;
+R3	=	%3			;
+R4	=	%4			;
+PSP	=	%5			;
+SP	=	%6			; Stack pointer
+PC	=	%7			; Program counter
+	.PAGE
+	.SBTTL	General Routines
+;
+;	R E G I S T E R   S A V E
+;
+;	Saves registers (R0-R4) on stack
+;
+RS:	MOV	(SP)+,	-(PSP)		; Save return address
+	MOV	R0,	-(SP)		; Save registers
+	MOV	R1,	-(SP)		;
+	MOV	R2,	-(SP)		;
+	MOV	R3,	-(SP)		;
+	MOV	R4,	-(SP)		;
+	JMP	@(PSP)+			;<<
+;
+;	R E G I S T E R   R E C A L L
+;
+;	Recalls registers (R4-R0) from stack
+;
+RR:	MOV	(SP)+,	-(PSP)		; Save return address
+	MOV	(SP)+,	R4		; Restore registers
+	MOV	(SP)+,	R3		;
+	MOV	(SP)+,	R2		;
+	MOV	(SP)+,	R1		;
+	MOV	(SP)+,	R0		;
+	JMP	@(PSP)+			;<<
+	.PAGE
+;
+;	D I S C   R O U T I N E S
+;
+DKDS	=	177400			; Drive status
+DKER	=	177402			; Errors
+DKCS	=	177404			; Control status
+DKWC	=	177406			; Word count
+DKBA	=	177410			; Current bus status
+DKDA	=	177412			; Disc address
+DKMR	=	177414			; Maintenance
+DKDB	=	177416			; Data buffer
+
+DKSET	=	^B0000			; Disk reset
+DKREAD	=	^B0100			; Read function
+DKWRIT	=	^B0010			; Write function
+;
+;	D I R E C T   D I S C   A C C E S S
+;
+DDA:	JSR	PC,	RS		;
+	MOV	(PSP)+,	R0		; Get transfer direction
+	MOV	(PSP)+,	R3		; Get block address (low order)
+	CLR	R2			; R2 (high order block address)
+	DIV	#^D12,	R2		; Convert block to sector
+	MOV	R2,	R1		;
+	MUL	#^D16,	R1		;
+	ADD	R3,	R1		; (R3 is the rem of division)
+	MOV	(PSP)+,	R2		; Get core address
+	MOV	#^D8,	R3		; Repeat 8 times if error
+DDA1:	MOV	#DKDA+2, R4		; Set up disc transfer:-
+	MOV	R1,	-(R4)		; Disc address
+	MOV	R2,	-(R4)		; Bus address
+	MOV	#^D-256, -(R4)		; Word count (1 sector)
+	MOV	R0,	-(R4)		; Function (r/w)
+	INC	(R4)			; Go
+DDA2:	TSTB	(R4)			; Done ?
+	BPL	DDA2			; No- wait
+	TST	(R4)			; Yes- error ?
+	BPL	DDA3			; No- finish
+	SOB	R3,	DDA1		; Yes- check repeat count
+	HALT				;
+	BR	.-2			;
+DDA3:	JSR	PC,	RR		;
+	RTS	PC			;<<
+	.PAGE
+	.SBTTL	Bootstrap subroutines
+;
+;	B O O T S T R A P
+;
+;
+;	B U F F E R S
+;
+LDBYTE:	.WORD	0			; Dump for get byte
+LDWORD:	.WORD	0			; Dump for get word
+
+BUFFER:	.BLKW	^D256			;
+BUFCEI:					; Buffer ceiling
+;
+;	G E T   B Y T E
+;
+GETBYT:	MOVB	(R1)+,	LDBYTE		; Get byte
+	CMP	R1,	#BUFCEI		; End of buffer ?
+	BNE	GETB1			; No
+	MOV	#BUFFER, R1		; Yes- Reset pointer
+	MOV	R1,	-(PSP)		; Read into buffer
+	MOV	R4,	-(PSP)		; from next block
+	INC	R4			; Next block next
+	MOV	#DKREAD, -(PSP)		; from disc
+	JSR	PC,	DDA		;
+GETB1:	ADD	LDBYTE,	R3		; Add to checksum
+	DEC	R0			; Decrement byte count
+	RTS	PC			;<<
+;
+;	G E T   W O R D
+;
+GETWRD:	JSR	PC,	GETBYT		; Get byte
+	MOV	LDBYTE,	LDWORD		; Move to word
+	JSR	PC,	GETBYT		; Get byte
+	MOVB	LDBYTE,	LDWORD+1	; Place in high byte
+	RTS	PC			;<<
+	.PAGE
+	.SBTTL	Main bootstrap
+;
+;	B O O T S T R A P
+;
+BOOT:	RESET
+	MOV	#100000, SP		; Set link stack
+	MOV	#40000,	PSP		; Set parameter stack
+	CLR	-(PSP)			; Reset disc
+	CLR	-(PSP)			;
+	MOV	#DKSET,	-(PSP)		;
+	JSR	PC,	DDA		;
+	MOV	#BUFFER, R1		; Byte pointer to buffer
+	MOV	#^D3,	R4		; Set block number
+	MOV	R1,	-(PSP)		; Read into buffer
+	MOV	R4,	-(PSP)		; Get first disc block
+	MOV	#DKREAD, -(PSP)		; from disc
+	JSR	PC,	DDA		;
+	INC	R4			; Get next block number
+	CLR	R2			; Clear load address
+LOAD:	CLR	R3			; Clear checksum
+	JSR	PC,	GETBYT		; Get byte
+	DECB	LDBYTE			;
+	BNE	LOAD			; Read til 001 read
+	JSR	PC,	GETBYT		; Read the extra byte
+	JSR	PC,	GETWRD		; Get word
+	MOV	LDWORD,	R0		; Set byte count
+	SUB	#4,	R0		; BC:=BC-4
+	CMP	R0,	#2		; If BC=2 get start address
+	BEQ	LOAD4			;
+	JSR	PC,	GETWRD		; Next word is load address
+	MOV	LDWORD,	R2		; so set up
+LOAD1:	JSR	PC,	GETBYT		; Get byte
+	BGE	LOAD3			; BC<0
+	TSTB	R3			; Test checksum
+	BEQ	LOAD			; O.k. so carry on
+LOAD2:	HALT				; Halt on error
+	BR	.-2			;
+LOAD3:	MOVB	LDBYTE,	(R2)+		; Load byte in address
+	BR	LOAD1			; Next byte
+LOAD4:	JSR	PC,	GETWRD		; Set start address
+	JSR	PC,	GETBYT		; for checksum only
+	TSTB	R3			; Test checksum
+	BNE	LOAD2			; Branch if error
+	IOT				;***** and start SUSIE
+	HALT				;
+	BR	.-2			;
+	.END	BOOT

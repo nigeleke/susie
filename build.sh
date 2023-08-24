@@ -4,6 +4,7 @@ mkdir -p target
 
 macro11 -rt11 -o target/susie.obj -l target/susie.lst src/susie.mac
 macro11 -rt11 -o target/dkinit.obj -l target/dkinit.lst src/dkinit.mac
+macro11 -rt11 -o target/boot.obj -l target/boot.lst src/boot.mac
 
 if [ -d "/opt/pidp11" ]
 then
@@ -19,4 +20,8 @@ then
     sudo mkdir -p /opt/pidp11/systems/dkinit/
     sudo cp target/dkinit.bin /opt/pidp11/systems/dkinit/dkinit.bin
     sudo cp simh/dkinit/boot.ini /opt/pidp11/systems/dkinit/
+
+    sudo mkdir -p /opt/pidp11/systems/boot/
+    sudo cp target/boot.bin /opt/pidp11/systems/boot/boot.bin
+    sudo cp simh/boot/boot.ini /opt/pidp11/systems/boot/
 fi
