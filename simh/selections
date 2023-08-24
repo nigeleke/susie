@@ -1,3 +1,5 @@
-0000	susie
-0001	dkinit
-0002	boot
+0000	idled
+0001	susie
+0002	dkinit
+0003	boot
+0004	load

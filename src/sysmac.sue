@@ -1,14 +1,18 @@
         .NLIST  TTM, TOC
 	.NLIST
 
+	.ASECT
+.	=	20000			; Set program start  of core
+
+
 R0      =       %0			; General registers
-R1      =       %0			;
-R2      =       %0			;
-R3      =       %0			;
-R4      =       %0			;
-PSP     =       %0			; Parameter stack pointer
-SP      =       %0			; Link stack pointer
-PC      =       %0			; Program counter
+R1      =       %1			;
+R2      =       %2			;
+R3      =       %3			;
+R4      =       %4			;
+PSP     =       %5			; Parameter stack pointer
+SP      =       %6			; Link stack pointer
+PC      =       %7			; Program counter
 
 ; *****************************************************************************
 ; Produce title on list file...
@@ -346,3 +350,6 @@ PC      =       %0			; Program counter
 	MOV	LFD, -(PSP)		; Stack LFD address
 	EMT	64
 .ENDM
+
+	.LIST
+	

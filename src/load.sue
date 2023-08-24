@@ -1,0 +1,49 @@
+	$NAME	<LOAD FOR SUSIE DISC FILES>
+
+PSW	=	177776
+
+PRS	=	177550
+PRB	=	177552
+
+DDS	=	177500
+TKS	=	177560
+
+EOL	=	13
+;
+;	B U F F E R S
+;
+OFILE:	$LFDB	<      >
+
+PROMPT:	$MESS	<[LOAD] >
+;
+;	L O A D - M A I N   P R O G R A M
+;
+LOAD:	MOV	#100000, SP		; Reset stack pointer (not usual)
+	MOV	#40000,	PSP		;
+	CLR	@#PSW			;
+	BIS	#40,	@#DDS		; Reset keyboard interrupts
+	BIS	#1000,	@#TKS		;
+	$DTEXT	#PROMPT			;
+	MOV	#OFILE,	R0		; Set address of file descriptor
+	$INFNM	R0			; Get filename
+	$INEOL	(PSP)+			; Read til end of line
+	TST	OFILE			; Another load?
+	BEQ	LOAD6			; No
+	$OPENO	R0			; Yes- open the file
+LOAD0:	INC	@#PRS			;
+LOAD1:	TSTB	@#PRS			; Get a character
+	BPL	LOAD1			;
+	MOV	@#PRB,	R1		; Wait til not null
+	BEQ	LOAD0			;
+	$WRITE	R0,	R1		; Write it
+LOAD2:	INC	@#PRS			; Write rest of tape
+LOAD3:	BIT	#100200, @#PRS		;
+	BHI	LOAD4			; Stop on error- no tape
+	BEQ	LOAD3			;
+	$WRITE	R0,	@#PRB		; else write character
+	BR	LOAD2			;
+LOAD4:	$CLOSE	R0			; Close file
+	CLR	OFILE			; No default name
+	BR	LOAD			;
+LOAD6:	$EXIT
+	.END	LOAD
