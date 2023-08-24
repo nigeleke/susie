@@ -431,7 +431,7 @@ DKIE	=	40			; Interrupt enable bit
 DKIV	=	114			; Interrupt vector
 .IFF
 DKS	=	177560			; TTY keyboard status
-DKB	=	177522			; TTY keyboard buffer
+DKB	=	177562			; TTY keyboard buffer
 DKIE	=	100			; Interrupt enable bit
 DKIV	=	60			; Interrupt vector
 .ENDC
@@ -622,7 +622,7 @@ PROKIB:	JSR	PC,	RS
 	CLR	R0			; Contains last char processed
 PKB1:	CMP	KIBIN,	KIBOUT		; Buffer empty
 	BEQ	PKB10			; Yes
-	MOV	@KIBOUT, R0		; No- Get char
+	MOVB	@KIBOUT, R0		; No- Get char
 	INC	KIBOUT			; Step pointer
 	CMP	KIBOUT,	#KIBC		; Gone over end ?
 	BNE	PKB2			; No
@@ -1044,27 +1044,43 @@ EVER1:	MOV	R0,	(PSP)		; Yes- so try and run
 SUETOP:					;*****	Top core location for SUSIE
 	.PAGE
 	.SBTTL	INTERRUPT VECTOR INITIALIZATION
+
+STOP:	HALT
+	HALT
+	JMP	SUSIE
+
 .	=	UNIV
-	.WORD	UNISR, 0*40
+	.WORD	STOP, 0 ; UNISR, 0*40
+
 .	=	TOIV
-	.WORD	TOISR, 0*40
+	.WORD	STOP, 0 ;TOISR, 0*40
+
 .	=	IRIV
-	.WORD	IRISR, 0*40
+	.WORD	STOP, 0 ;IRISR, 0*40
+
 .	=	BPIV
-	.WORD	BPISR, 0*40
+	.WORD	STOP, 0 ;BPISR, 0*40
+
 .	=	IOTIV
-	.WORD	IOTISR, 0*40
+	.WORD	STOP, 0 ;IOTISR, 0*40
+
 .	=	PFIV
-	.WORD	PFISR, 7*40
+	.WORD	STOP, 0 ;PFISR, 7*40
+
 .	=	EMTIV
-	.WORD	UDISR, 0*40
+	.WORD	STOP, 0 ;UDISR, 0*40
+
 .	=	TRPIV
-	.WORD	TRPISR, 0*40
+	.WORD	STOP, 0 ;TRPISR, 0*40
+
 .	=	LKIV
-	.WORD	LKISR, 6*40
+	.WORD	STOP, 0 ;LKISR, 6*40
+
 .	=	DDIV
 	.WORD	DISR, 5*40
+
 .	=	DKIV
 	.WORD	KISR, 5*40
 
 	.END	SUSIE
+
