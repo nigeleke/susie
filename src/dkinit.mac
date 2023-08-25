@@ -73,7 +73,7 @@ DKDB	=	177416			; Data buffer
 
 DKSET	=	^B0000			; Disk reset
 DKREAD	=	^B0100			; Read function
-DKWRIT	=	^B0100			; Write function
+DKWRIT	=	^B0010			; Write function
 ;
 ;	D I R E C T   D I S C   A C C E S S
 ;
@@ -137,7 +137,7 @@ INIT0:	MOV	#BUFFER, -(PSP)		; and write file directory
 INIT1:	INC	@#PRS			; and write susie
 INIT2:	TSTB	@#PRS			;
 	BPL	INIT2			;
-	DEC	@PRB			;
+	DEC	@#PRB			;
 	BNE	INIT1			; Wait til '1' found
 	MOV	#1,	BUFFER		; Put in buffer
 	MOV	#BUFFER+1, R0		; Set up buffer pointer
