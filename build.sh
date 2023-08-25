@@ -10,6 +10,7 @@ if [ -d "/opt/pidp11" ]
 then
     obj2bin.pl -rt11 --outfile=target/susie.bin target/susie.obj
     obj2bin.pl -rt11 --outfile=target/dkinit.bin target/dkinit.obj
+    obj2bin.pl -rt11 --outfile=target/boot.bin target/boot.obj
 
     sudo cp simh/selections /opt/pidp11/systems/
 
