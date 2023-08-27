@@ -97,26 +97,23 @@ RR:	MOV	(SP)+,	-(PSP)		; Save return address
 ;		3) Reset stacks and status word
 ;		4) Disable escape facility
 ;
-;++
-;@ Todo add disk stuff
-$EXIT:	;MOV	OFCF,	R0		; Closed all files?
-	;BEQ	EXIT			; Yes
-	;MOV	R0,	-(PSP)		; No - close this one
-	;JSR	PC,	$CLOSE		;
-	;BR	$EXIT
-EXIT::	;MOV	#BITMAP, -(PSP)		; Write back important tables
-	;CLR	-(PSP)			; Bitmap- sector zero
-	;MOV	#DKWRIT, -(PSP)		;
-	;JSR	PC, 	DDA		;
-	;MOV	#2,	R0		; Two sectors for directory
-	;MOV	#FILES+^D512, R1	; Offset into directory
-;EXIT2:	MOV	R1,	-(PSP)		; Read directory from disk
-	;MOV	R0,	-(PSP)		;
-	;MOV	#DKWRIT, -(PSP)		;
-	;JSR	PC,	DDA		;
-	;SUB	#^D512,	R1		;
-	;SOB	R0,	EXIT2		;
-;--			;
+$EXIT:	MOV	OFCF,	R0		; Closed all files?
+	BEQ	EXIT1			; Yes
+	MOV	R0,	-(PSP)		; No - close this one
+	JSR	PC,	$CLOSE		;
+	BR	$EXIT
+EXIT1:	MOV	#BITMAP, -(PSP)		; Write back important tables
+	CLR	-(PSP)			; Bitmap- sector zero
+	MOV	#DKWRIT, -(PSP)		;
+	JSR	PC, 	DDA		;
+	MOV	#2,	R0		; Two sectors for directory
+	MOV	#FILES+^D512, R1	; Offset into directory
+EXIT2:	MOV	R1,	-(PSP)		; Read directory from disk
+	MOV	R0,	-(PSP)		;
+	MOV	#DKWRIT, -(PSP)		;
+	JSR	PC,	DDA		;
+	SUB	#^D512,	R1		;
+	SOB	R0,	EXIT2		;
 	MOV	#100000, SP		; Reset link stack
 	MOV	#40000,	PSP		; Reset parameter stack
 	MOV	#-1,	EIF		; Disable escapes
@@ -785,13 +782,10 @@ $INEOL:	CMP	(PSP)+,	#EOL		; Last char = <EOL> ?
 ;
 $INFNM:	JSR	PC,	RS
 	MOV	(PSP)+,	R0		; Get LFD address
-;++
-; @Todo add disk stuff
-;	TSTB	LFDOPN(R0)		; Is LFD currently active ?
-;	BEQ	INFNM1			; No
-;	MOV	#IFNER,	-(PSP)		; Yes- error
-;	JMP	$ERROR			;<<
-;++
+	TSTB	LFDOPN(R0)		; Is LFD currently active ?
+	BEQ	INFNM1			; No
+	MOV	#IFNER,	-(PSP)		; Yes- error
+	JMP	$ERROR			;<<
 INFNM1:	MOV	#2,	R2		; Two words/name
 INFNM2:	CLR	R1			;
 	MOV	#3,	R3		; Three chars/word
@@ -839,7 +833,659 @@ $SESCI:	MOV	(PSP)+,	EIF		; Set escape inhibit flag
 	RTS	PC			;<<
 	.PAGE
 	.SBTTL	DISC CONTROL ROUTINES
-;	@TODO DISK stuff
+;
+;	The following routines make up the file handling
+;	control for SUSIE files.
+;
+;
+;	D I S C
+;
+DKDS	=	177400			; Drive status
+DKER	=	177402			; Errors
+DKCS	=	177404			; Control status
+DKWC	=	177406			; Word count
+DKBA	=	177410			; Current bus status
+DKDA	=	177412			; Disc address
+DKMR	=	177414			; Maintenance
+DKDB	=	177416			; Data buffer
+
+DKSET	=	^B0000			; Disk reset
+DKREAD	=	^B0100			; Read function
+DKWRIT	=	^B0010			; Write function
+;
+;	B U F F E R S
+;
+; Local file descriptor- definition
+;
+LFDFCF	=	4			; File chain forward pointer
+LFDFCB	=	6			; File chain back pointer
+LFDOPN	=	10			; Open/closed state
+LFDEOF	=	11			; End of file marker
+LFDHSH	=	12			; Hash number in file directory
+LFDBUF	=	14			; Pointer to r/w buffer
+LFDPTR	=	16			; Pointer to byte within buffer
+
+; File directory- definition
+MFB1	=	4			; Main file 1st block pointer
+BFB1	=	6			; Backing file 1st block pointer
+
+BITMAP:	.BLKB	^D256			; Bitmap used for disc blocks
+BMAPC:					; Bitmap ceiling
+
+;!!!!!	Bitmap must be read in before file directory.
+;!!!!!	or it must have 256 free words from start of bitmap....
+FILES:	.BLKW	^D128*4			; File directory (128 files)
+FILEC:					; File directory ceiling
+
+FST:	.BLKB	^D128			; File state table
+
+OFCF:	.WORD	0			; Open file chain forward pointer
+OFCB:	.WORD	0			; Open file chain back pointer
+
+LDBYTE:	.WORD	0			; Dump for get byte
+LDWORD:	.WORD	0			; Dump for get word
+
+LDERR:	.WORD	^D13
+	.ASCII	/!! Load error/
+	.EVEN
+
+DKFAIL:	.WORD	^D18
+	.ASCII	/** Disc failure **/
+	.EVEN
+
+OINOF:	.WORD	^D17
+	.ASCII	/!! OPENI- No file/
+	.EVEN
+
+OIOF:	.WORD	^D19
+	.ASCII	/!! OPENI- File open/
+	.EVEN
+
+OOFO:	.WORD	^D36
+	.ASCII	/!! OPENO- Full directory or bad name/
+	.EVEN
+
+OOOF:	.WORD	^D19
+	.ASCII	/!! OPENO- File open/
+	.EVEN
+
+OODF:	.WORD	^D19
+	.ASCII	/!! OPENO- Disc full/
+	.EVEN
+
+RDFNO:	.WORD	^D22
+	.ASCII	/!! READ- File not open/
+	.EVEN
+
+RDEOF:	.WORD	^D20
+	.ASCII	/!! READ- End of file/
+	.EVEN
+
+WRFNO:	.WORD	^D23
+	.ASCII	/!! WRITE- File not open/
+	.EVEN
+
+WRDF:	.WORD	^D19
+	.ASCII	/!! WRITE- Disc full/
+	.EVEN
+
+CLCF:	.WORD	^D21
+	.ASCII	/?? CLOSE- File closed/
+	.EVEN
+
+DLNOF:	.WORD	^D18
+	.ASCII	/?? DELETE- No file/
+	.EVEN
+
+DLOF:	.WORD	^D20
+	.ASCII	/!! DELETE- File open/
+	.EVEN
+
+RNNOF:	.WORD	^D18
+	.ASCII	/!! RENAME- No file/
+	.EVEN
+
+RNFD:	.WORD	^D37
+	.ASCII	/!! RENAME- Full directory or bad name/
+	.EVEN
+
+RNOF:	.WORD	^D20
+	.ASCII	/!! RENAME- File open/
+	.EVEN
+	.PAGE
+;	The following routines are subroutines for
+;	the file handling UUOs.
+;
+;
+;	D I R E C T   D I S C   A C C E S S
+;
+;	Reads (writes) block number given (from)
+;	buffer (256 words) at address given.
+;
+DDA:	JSR	PC,	RS		;
+	MOV	(PSP)+,	R0		; Get transfer direction
+	MOV	(PSP)+,	R3		; Get block address (low order)
+	CLR	R2			; R2 (high order block address)
+	DIV	#^D12,	R2		; Convert block to sector
+	MOV	R2,	R1		;
+	MUL	#^D16,	R1		;
+	ADD	R3,	R1		; (R3 is the rem of division)
+	MOV	(PSP)+,	R2		; Get core address
+	MOV	#^D8,	R3		; Repeat 8 times if error
+DDA1:	MOV	#DKDA+2, R4		; Set up disc transfer:-
+	MOV	R1,	-(R4)		; Disc address
+	MOV	R2,	-(R4)		; Bus address
+	MOV	#^D-256, -(R4)		; Word count (1 sector)
+	MOV	R0,	-(R4)		; Function (r/w)
+	INC	(R4)			; Go
+DDA2:	TSTB	(R4)			; Done ?
+	BPL	DDA2			; No- wait
+	TST	(R4)			; Yes- error ?
+	BPL	DDA3			; No- finish
+	SOB	R3,	DDA1		; Yes- check repeat count
+	HALT				;
+	BR	.-2			;
+DDA3:	JSR	PC,	RR		;
+	RTS	PC			;<<
+;
+;	A L L O C A T E   D I S C   B L O C K
+;
+;	Returns block number of next free block on disc.
+;	(Obtained from bitmap).  Returns 0 if no block
+;	available.
+;
+ALLOC:	JSR	PC,	RS		;
+	MOV	#BITMAP, R0		; Check bitmap for free block
+ALLOC1:	MOVB	(R0)+,	R1		; Free block found
+	BNE	ALLOC2			; Yes
+	CMP	R0,	#BMAPC		; No- checked all blocks?
+	BNE	ALLOC1			; No
+	CLR	-(PSP)			; Yes- No free blocks
+	BR	ALLOC5			;
+ALLOC2:	SUB	#BITMAP+1, R0		; Find block number
+	CLR	R2			; Shift count
+	MOV	#200,	R3		; Bit pointer
+ALLOC3:	ROLB	R1			; Get a bit
+	BCS	ALLOC4			; Found block if set
+	INC	R2			; Increment shift count
+	ASR	R3			; Adjust bit pointer
+	BR	ALLOC3			;
+ALLOC4:	BICB	R3,	BITMAP(R0)	; Get bitmap bit
+	MUL	#^D8,	R0		; Get actual block number
+	ADD	R2,	R1		; (R1- Low order of mul)
+	MOV	R1,	-(PSP)		; Return block number
+ALLOC5:	JSR	PC,	RR		;
+	RTS	PC			;<<
+;
+;	R E C L A I M   D I S C   B L O C K
+;
+;	Reclaims chain of file blocks (Bitmap reset accordingly)
+;
+RECLAM:	JSR	PC,	RS		;
+RECLM1:	CLR	R0			; (R0- high order for DIV)
+	MOV	(PSP),	R1		; Get first block to reclaim
+	BEQ	RECLM3			; Stop at last block in chain
+	DIV	#^D8,	R0		; Bitmap offset in R0
+	MOV	#400,	R2		; Find actual bit
+RECLM2:	ASR	R2			; by shifting pointer
+	DEC	R1			; and decrementing REM of DIV
+	BGE	RECLM2			; until zero
+	BISB	R2,	BITMAP(R0)	; Reclaim the block
+	MOV	(PSP),	R1		; Read the block to
+	MOV	PSP,	-(SP)		; check if last block
+	MOV	(SP)+,	-(PSP)		;
+	SUB	#^D510,	(PSP)		; in chain has been
+	MOV	R1,	-(PSP)		; found or not
+	MOV	#DKREAD, -(PSP)		;
+	JSR	PC,	DDA		;
+	BR	RECLM1			;
+RECLM3:	TST	(PSP)+			;
+	JSR	PC,	RR		;
+	RTS	PC			;<<
+;
+;	G E T   H A S H   V A L U E
+;
+;	Checks on existance of file:
+;	If file exists then
+;		returns hash value & pointers into directory
+;	If no file but space for it to be created then
+;		returns hash value and pointers into directory
+;	If no file and no space then
+;		returns -1
+;
+HASH:	JSR	PC,	RS		;
+	MOV	(PSP)+,	R0		; Get LFD address
+	TST	(R0)			; Illegal filename ?
+	BNE	HASH6			; No
+	TST	2(R0)			; Maybe ?
+	BNE	HASH6			; No
+	CLR	R2			; Yes- but can't exist
+	BR	HASH4			;
+HASH6:	CLR	R1			; Last free entry (none)
+	MOV	#^D128,	R2		; 128 files to check
+	MOV	#FILES+<^D128*^D8>, R3	; Directory pointer
+HASH1:	SUB	#^D8,	R3		; Point to next entry
+	TST	(R3)			; Null entry ?
+	BNE	HASH2			; No
+	MOV	R2,	R1		; Yes- remember it
+	BR	HASH3			;
+HASH2:	CMP	(R0),	(R3)		; Filename the same ?
+	BNE	HASH2			; No
+	CMP	2(R0),	2(R3)		; Maybe ?
+	BEQ	HASH4			; Yes- file found
+HASH3:	SOB	R2,	HASH1		;
+	MOV	R1,	R2		; Get last null entry
+HASH4:	DEC	R2			; True hash number ?
+	BMI	HASH5			; No legal entry
+	MOV	R2,	R3		; Find directory offset
+	MUL	#^D8,	R3		;
+	ADD	#FILES,	R3		;
+	MOV	R3,	-(PSP)		; Return offset
+HASH5:	MOV	R2,	-(PSP)		; Return hash value
+	JSR	PC,	RR		;
+	RTS	PC			;<<
+;
+;	G E T   B Y T E
+;
+;	Reads a byte from open file, (@R0).
+;	(for run routine)
+;
+GETBYT:	MOV	R0,	-(PSP)		; Set up LFD pointer
+	JSR	PC,	$READ		; Read a byte
+	MOV	(PSP),	LDBYTE		;
+	ADD	(PSP)+,	R3		; Add to checksum
+	DEC	R4			; Decrement byte count
+	RTS	PC			;<<
+;
+;	G E T   W O R D
+;
+;	Reads a word from open file, (@R0).
+;	(for run routine)
+;
+GETWRD:	JSR	PC,	GETBYT		; Get byte
+	MOV	LDBYTE,	LDWORD		; Move to word
+	JSR	PC,	GETBYT		; Get byte
+	MOVB	LDBYTE,	LDWORD+1	; Place in high byte
+	RTS	PC			;<<
+	.PAGE
+;
+;	F I L E   H A N D L I N G   R O U T I N E S
+;
+;	The following routines are UUOs concerned with
+;	the file handling.
+;
+;	L O O K   F O R   F I L E   D A T A
+;
+;	Looks for data concerning file description.
+;	Returns existance
+;	and if exists then backup existance and open state
+;
+$LOOK:	JSR	PC,	RS		;
+	JSR	PC,	HASH		; Get hash val &pointers
+	MOV	(PSP)+,	R1		; Get hash value
+	BMI	LOOK1			; Branch if no possible entry
+	MOV	(PSP)+,	R2		; Get pointer to directory
+	MOV	MFB1(R2), R3		; File exists ?
+	BEQ	LOOK1			; No
+	MOVB	FST(R1), R4		; Yes- get open closed state
+	MOV	R4,	-(PSP)		; and state it
+	MOV	BFB1(R2), -(PSP)	; State if backup exists
+	MOV	R3,	-(PSP)		; State file exists
+	BR	LOOK2			;
+LOOK1:	CLR	-(PSP)			; State file don't exist
+LOOK2:	JSR	PC,	RR		;
+	RTS	PC			;<<
+;
+;	O P E N   F I L E   F O R   I N P U T
+;
+;	Opens file and initializes fir further input.
+;	Attaches file to 'open chain'
+;
+$OPENI:	JSR	PC,	RS		;
+	MOV	(PSP),	R0		; Get LFD address
+	JSR	PC,	HASH		; Get pointers to tables
+	MOV	(PSP)+,	R1		; Get hash value
+	BMI	OPENI0			; Skip if no file
+	MOV	(PSP)+,	R2		; & file directory pointer
+	MOV	MFB1(R2), R3		; File exists ?
+	BNE	OPENI1			; Yes
+OPENI0:	MOV	#OINOF,	-(PSP)		; No- error
+	JMP	$ERROR			;<<
+OPENI1:	MOVB	FST(R1), R4		; Open for o/p?
+	INC	R4			; or too many i/p ?
+	BGT	OPENI2			; No
+	MOV	#OIOF,	-(PSP)		; Yes- error
+	JMP	$ERROR			;<<
+OPENI2:	MOV	R1,	LFDHSH(R1)	; Set hash number
+	MOV	OFCB,	R4		; Attach LFD to open file chain
+	BNE	OPENI3			; Chain already exists ?
+	MOV	R0,	OFCF		; No chain so set up
+	BR	OPENI4			;
+OPENI3:	MOV	R0,	LFDFCF(R4)	; Chain exists so..
+	MOV	R4,	LFDFCB(R0)	; attach this LFD
+OPENI4:	MOV	R0,	OFCB		;
+	INCB	FST(R1)			; Tell all file is open
+	INCB	LFDOPN(R0)		; Tell LFD file is open
+	MOV	LFDBUF(R0), RECLM1	; Get buffer address
+	MOV	R1,	-(PSP)		; Read buffer from file
+	MOV	R3,	-(PSP)		; Get first block no- of file
+	MOV	#DKREAD, -(PSP)		; and read from disc
+	JSR	PC,	DDA		;
+	CLRB	LFDEOF(R0)		; Not end of file
+	TST	(R1)+			; But check first
+	BNE	OPENI5			; O.k...
+	INCB	LFDEOF(R0)		; Oops- Empty file
+OPENI5:	MOV	R1,	LFDPTR(R0)	; Set up pointer
+	JSR	PC,	RR		;
+	RTS	PC			;<<
+;
+;	O P E N   F I L E   F O R   O U T P U T
+;
+;	Opens file for output and initializes for further
+;	output.  Any backup is 'Pushed'.
+;	Attaches file to 'open chain'.
+;
+$OPENO:	JSR	PC,	RS		;
+	MOV	(PSP),	R0		; Get LFD address
+	JSR	PC,	HASH		;
+	MOV	(PSP)+,	R1		; Get hash value
+	BPL	OPENO1			; Can file be created ?
+	MOV	#OOFO,	-(PSP)		; No- errpr
+	JMP	$ERROR			;<<
+OPENO1:	MOV	(PSP)+,	R2		; Get file directory pointer
+	ADD	#MFB1,	R2		;
+	TST	(R2)+			; File exists ?
+	BEQ	OPENO3			; No
+	TSTB	FST(R1)			; Yes- file open ?
+	BEQ	OPENO2			; No
+	MOV	#OOOF,	-(PSP)		; Yes- error
+	JMP	$ERROR			;<<
+OPENO2:	TST	(R2)			; Backup file exists ?
+	BEQ	OPENO3			; No
+	MOV	(R2),	-(PSP)		; Yes- reclaim disc blocks
+	JSR	PC,	RECLAM		;
+OPENO3:	JSR	PC,	ALLOC		; Allocate a disc block
+	TST	(PSP)			; Successful ?
+	BNE	OPENO4			; Yes
+	MOV	#OODF,	-(PSP)		; No- Disc full !!
+	JMP	$ERROR			;<<
+OPENO4:	MOV	-(R2),	2(R2)		; Make current file into backup
+	MOV	(PSP),	(R2)		; Set first block pointer
+	MOV	2(R0),	-(R2)		; Set up filename
+	MOV	(R0),	-(R2)		;
+	MOV	R1,	LFDHSH(R0)	; Set up hash value
+	MOV	OFCB,	R3		; Attach to open file chain
+	BNE	OPENO5			; Chain already exists ?
+	MOV	R0,	OFCF		; No chain so set up
+	BR	OPENO6			;
+OPENO5:	MOV	R0,	LFDFCF(R3)	; Chain exists so
+	MOV	R3,	LFDFCB(R0)	; attach this LFD
+OPENO6:	MOV	R0,	OFCB		;
+	DECB	FST(R1)			; Tell all file is open
+	DECB	LFDOPN(R0)		; Tell LFD file is open
+	MOV	LFDBUF(R0), R3		; Get buffer address
+	CLR	(R3)+			;
+	MOV	R3,	LFDPTR(R0)	; Get byte pointer
+	ADD	#^D508,	R3		; Store disc block number
+	MOV	(PSP)+,	(R3)		; at end of buffer
+	JSR	PC,	RR		;
+	RTS	PC			;<<
+;
+;	R E A D   F R O M   F I L E
+;
+$READ:	JSR	PC,	RS		;
+	MOV	(PSP)+,	R0		; Get LFD address
+	TSTB	LFDOPN(R0)		; File open for i/p ?
+	BGT	READ1			; Yes
+	MOV	#RDFNO,	-(PSP)		; No- error
+	JMP	$ERROR			;<<
+READ1:	TSTB	LFDEOF(R0)		; End of file ?
+	BEQ	READ2			; No
+	MOV	#RDEOF,	-(PSP)		; Yes- error
+	JMP	$ERROR			;<<
+READ2:	MOVB	@LFDPTR(R0), R1		; Get the byte
+	INC	LFDPTR(R0)		; Step the pointer
+	MOV	LFDBUF(R0), R2		; Get the buffer address
+	DEC	(R2)			; Decrement legal byte count
+	BNE	READ5			; O.k...
+	MOV	^D510(R2), R3		; Get next block
+	BNE	READ3			; Not end of file
+	INCB	LFDEOF(R0)		; Indicate end of file
+	BR	READ5			;
+READ3:	MOV	R2,	-(PSP)		; Read into buffer
+	MOV	R3,	-(PSP)		; from next block
+	MOV	#DKREAD, -(PSP)		; from disc
+	JSR	PC,	DDA		;
+	TST	(R2)+			; Null block ?
+	BNE	READ4			; No
+	INCB	LFDEOF(R0)		; Yes- indicate end of file
+READ4:	MOV	R2,	LFDPTR(R0)	; Set up pointer
+READ5:	MOV	R1,	-(PSP)		; Return byte just read
+	JSR	PC,	RR		;
+	RTS	PC			;<<
+;
+;	W R I T E   T O   D I S C   F I L E
+;
+;	Writes a byte of data to file (previously opened)
+;
+$WRITE:	JSR	PC,	RS		;
+	MOV	(PSP)+,	R0		; Get LFD address
+	TSTB	LFDOPN(R0)		; Is file open ?
+	BMI	WRITE1			; Yes
+	MOV	#WRFNO,	-(PSP)		; No- error
+	JMP	$ERROR			;<<
+WRITE1:	MOV	(PSP)+,	R1		; Put byte in buffer
+	MOVB	R1,	@LFDPTR(R0)	;
+	INC	LFDPTR(R0)		; Step the pointer
+	MOV	LFDBUF(R0),	R1	; Get the buffer
+	INC	(R1)			; Increment byte count
+	CMP	(R1),	#^D508		; Buffer full ?
+	BLT	WRITE3			; No
+	MOV	R1,	-(PSP)		; Yes- write to disc
+	MOV	^D512(R1), -(PSP)	;
+	MOV	#DKWRIT, -(PSP)		;
+	JSR	PC,	ALLOC		; Allocate the new disk block
+	MOV	(PSP)+,	R2		; Is there a new one ?
+	BNE	WRITE2			; Yes
+	MOV	#WRDF,	-(PSP)		; No- error
+	JMP	$ERROR			;<<
+WRITE2:	MOV	R2,	^D510(R1)	; Set the new block pointer
+	JSR	PC,	DDA		; Write the block
+	CLR	(R1)+			; Set new block
+	MOV	R1,	LFDPTR(R0)	; and pointer
+WRITE3:	JSR	PC,	RR		;
+	RTS	PC			;<<
+;
+;	C L O S E   F I L E
+;
+;	Closes file
+;	If opened for output then writes last block.
+;	Detaches file from 'open chain'
+;
+$CLOSE:	JSR	PC,	RS		;
+	MOV	(PSP)+,	R0		; Get LFD address
+	TSTB	LFDOPN(R0)		; Is file open ?
+	BNE	CLOSE1			; Yes
+	MOV	#CLCF,	-(PSP)		; No- Crazy..!!..
+	JSR	PC,	$WARN		;
+	BR	CLOSE7			;
+CLOSE1:	BGT	CLOSE2			; Branch if only reading
+	MOV	LFDBUF(R0), R1		; Write final block
+	MOV	R1,	-(PSP)		; to disc
+	MOV	^D510(R1), -(PSP)	; Get block number
+	CLR	^D510(R1)		; no block follows
+	MOV	#DKWRIT, -(PSP)		;
+	JSR	PC,	DDA		;
+CLOSE2:	MOV	LFDHSH(R0), R1		; Get hash number
+	DECB	FST(R1)			; Tell all file closed
+	BPL	CLOSE3			;
+	CLRB	FST(R1)			; and can be accessed
+CLOSE3:	CLRB	LFDOPN(R0)		; Tell LFD file is closed
+;	Detach LFD from open file chain	;
+	MOV	LFDFCF(R0), R1		; Get forward pointer address
+	MOV	LFDFCB(R0), R2		; Get back pointer address
+	CMP	OFCF,	R0		; Is this at front ?
+	BNE	CLOSE4			; No
+	MOV	R1,	OFCF		; Yes
+	BR	CLOSE5			;
+CLOSE4:	MOV	R1,	LFDFCF(R2)	;
+CLOSE5:	CMP	OFCB, 	R0		; Is it at back ?
+	BNE	CLOSE6			; No
+	MOV	R2,	OFCB		; Yes
+	BR	CLOSE7			;
+CLOSE6:	MOV	R2,	LFDFCB(R1)	;
+CLOSE7:	JSR	PC,	RR		;
+	RTS	PC			;<<
+;
+;	D E L E T E   F I L E
+;
+;	Deletes file from directory
+;	'Pops up' any backup
+;
+$DELET:	JSR	PC,	RS		;
+	JSR	PC,	HASH		; Get hash values
+	MOV	(PSP)+,	R0		; Get hash
+	BMI	DELET1			; No file
+	MOV	(PSP)+,	R1		; Get offset into directory
+	ADD	#MFB1,	R1		; 
+	TST	(R1)			; File exists ?
+	BNE	DELET2			; Yes
+DELET1:	MOV	#DLNOF,	-(PSP)		; No- warning
+	JSR	PC,	$WARN		;
+	BR	DELET5			;
+DELET2:	TSTB	FST(R0)			; File open ?
+	BEQ	DELET3			; No
+	MOV	#DLOF,	-(PSP)		; Yes- error
+	JMP	$ERROR			;<<
+DELET3:	MOV	(R1)+,	-(PSP)		; Reclaim all blocks
+	JSR	PC,	RECLAM		;
+	MOV	(R1),	-(R1)		; Backup exists ?
+	BEQ	DELET4			; No
+	CLR	2(R1)			; Yes- but not now !!
+	BR	DELET5			;
+DELET4:	CLR	-(R1)			; Eliminate from directory
+	CLR	-(R1)			;
+DELET5:	JSR	PC,	RR		;
+	RTS	PC			;<<
+;
+;	R E N A M E   F I L E
+;
+;	Renames file in file directory
+;	Backup 'pops' & 'pushes' are taken care of,
+;
+$RENAM:	JSR	PC,	RS		;
+	JSR	PC,	HASH		; Get hash values of old file
+	MOV	(PSP)+,	R0		; Does old file exist ?
+	BMI	RENAM1			; No
+	MOV	(PSP)+, R1		; Maybe- get directory offset
+	TST	MFB1(R1)		; Exists ?
+	BNE	RENAM2			; Yes
+RENAM1:	MOV	#RNNOF,	-(PSP)		; No- error
+	JMP	$ERROR			;<<
+RENAM2:	MOV	(PSP),	R2		; Get new file LFD address
+	JSR	PC,	HASH		; Get hash values of new file
+	MOV	(PSP)+,	R3		; Can new file exist ?
+	BPL	RENAM3			; Yes
+	MOV	#RNFD,	-(PSP)		; No- full directory
+	JMP	$ERROR			;<<
+RENAM3:	MOV	(PSP)+,	R4		; Get offset into directory
+	TSTB	FST(R0)			; Is old file open >
+	BEQ	RENAM5			; No
+RENAM4:	MOV	#RNOF,	-(PSP)		; Yes- error
+	JMP	$ERROR			;<<
+RENAM5:	TST	MFB1(R4)		; New file exists ?
+	BNE	RENAM6			; Yes
+	MOV	(R2)+,	(R4)		; No- so create it
+	MOV	(R2)+,	2(R4)		;
+	BR	RENAM7			;
+RENAM6:	MOV	BFB1(R4), -(PSP)	; Reclaim backing file blocks
+	JSR	PC,	RECLAM		;
+	MOV	MFB1(R4), BFB1(R4)	; Backing!=Main
+RENAM7:	MOV	MFB1(R1), MFB1(R4)	; New file=Old file
+	MOV	BFB1(R1), MFB1(R1)	; Old main=Old backup
+	BNE	RENAM8			; Backing exists
+	CLR	(R1)+			; Don't exist so
+	CLR	(R1)+			; eliminate
+RENAM8:	CLR	BFB1(R1)		; No backup now
+RENAM9:	JSR	PC,	RR		;
+	RTS	PC			;<<
+;
+;	F I L E   D I R E C T O R Y   I N D E X
+;
+;	Returns data from directory
+;	about file number (passed as parameter).
+;
+$INDEX:	JSR	PC,	RS		;
+	MOV	(PSP)+,	R1		; Get hash number in question
+	BIC	#177600, R1		;
+	MOVB	FST(R1), R2		; Get open state
+	MOV	R2,	-(PSP)		; Return open state
+	CLR	R0			; Get directory offset
+	INC	R1			;
+	MUL	#^D8,	R1		;
+	ADD	#FILES,	R1		;
+	MOV	-(R1),	-(PSP)		; Return backup existance
+	MOV	-(R1),	-(PSP)		; Return main file existance
+	MOV	-(R1),	-(PSP)		; Return low order name
+	MOV	-(R1),	-(PSP)		; Return high order name
+	JSR	PC,	RR		;
+	RTS	PC			;<<
+;
+;	R U N   D I S C   F I L E
+;
+;	Closes all open files and runs specified file.
+;	*** No return to use program ***
+;
+$RUN:	MOV	OFCF,	R0		; Closed all files ?
+	BEQ	RUN1			; Yes
+	MOV	R0,	-(PSP)		; No- close this one
+	JSR	PC,	$CLOSE		;
+	BR	$RUN			;
+RUN1:	MOV	(PSP)+,	R0		; Get LFD address
+	ADD	#^D16,	R0		; Transfer to stack
+	MOVB	#^D8,	R1		; else it may be overwritten
+RUN2:	MOV	-(R0),	-(PSP)		;
+	SOB	R1,	RUN2		;
+	MOV	PSP,	R0		; Set new LFD pointer
+	SUB	#^D512,	PSP		; Save space for buffer
+	MOV	PSP,	LFDBUF(R0)	; Set up buffer pointer
+	MOV	R0,	-(PSP)		; Open for input
+	JSR	PC,	$OPENI		;
+	CLR	R2			; Clear load address
+LOAD3:	CLR	R3			; Clear checksum
+	JSR	PC,	GETBYT		; Get a byte
+	DECB	LDBYTE			;
+	BNE	LOAD3			; Wait till 001 found
+	JSR	PC,	GETBYT		; Get the extra byte
+	JSR	PC,	GETWRD		; Get a word
+	MOV	LDWORD,	R4		; Set byte count
+	SUB	#4,	R4		; BC:=BC-4
+	CMP	R4,	#2		; If BC=2 Get start addr
+	BEQ	LOAD7			;
+	JSR	PC,	GETWRD		; Next word is load addr
+	MOV	LDWORD,	R2		; so set up
+LOAD4:	JSR	PC,	GETBYT		; Get a byte
+	BGE	LOAD6			; BC<0 ?
+	TSTB	R3			; Yes- Test checksum
+	BEQ	LOAD3			; O.k. so carry on
+LOAD5:	MOV	#LDERR,	-(PSP)		; else load error
+	JMP	$ERROR			;<<
+LOAD6:	CMP	R2,	#SUETOP		; Will this overwrite SUSIE ?
+	BLO	LOAD5			; Yes- error
+	MOVB	LDBYTE,	(R2)+		; No- Load byte in address
+	BR	LOAD4			;
+LOAD7:	JSR	PC,	GETWRD		; Get start address
+	JSR	PC,	GETBYT		; for checksum only
+	TSTB	R3			; Test checksum
+	BNE	LOAD5			; Branch if error
+	MOV	R0,	-(PSP)		; Close file
+	JSR	PC,	$CLOSE		;
+	ADD	#^D512+^D16, PSP	; Reclaim buffer space
+	CMP	LDWORD,	#SUETOP		; Start possible ?
+	BHIS	RUN8			; Yes
+	MOV	#LDERR,	-(PSP)		; No- error
+	JMP	$ERROR			;<<
+RUN8:	MOV	LDWORD,	PC		;<<*** Start other program
 	.PAGE
 	.SBTTL	DESPATCH SERVICe
 ;
@@ -877,7 +1523,16 @@ DST:					; Despatch services table
 	.WORD	$INFNM			; Filename input
 	.WORD	$STECO			; Set echo
 	.WORD	$SESCI			; Set escape inhibit
-	; @TODO Disc control routines
+	.WORD	$LOOK			; Look for file data
+	.WORD	$OPENI			; Open file for input
+	.WORD	$OPENO			; Open file for output
+	.WORD	$READ			; Read byte from file
+	.WORD	$WRITE			; Write byte to file
+	.WORD	$CLOSE			; Close disc file
+	.WORD	$DELET			; Delete file
+	.WORD	$RENAM			; Rename file
+	.WORD	$INDEX			; File directory index
+	.WORD	$RUN			; Run disc file
 DSTT:					; Table top
 ;
 ;	S E R V I C E   R O U T I N E
@@ -1008,24 +1663,21 @@ SUSIE:	RESET				; Init the UNIBUS.....
 	MOV	#HELLO,	-(PSP)		; Say Howdy !!!!!
 	JSR	PC,	$DTEXT		;
 ; Table initialisation
-;++
-; @Todo disk stuff
-;	MOV	#BITMAP, -(PSP)		; Read bitmap from disc
-;	CLR	-(PSP)			; Sector zero
-;	MOV	#DKREAD, -(PSP)		;
-;	JSR	PC,	DDA		;
-;	MOV	#2,	R0		; Two sectors for directory
-;	MOV	#FILES+^D512, R1	; Offset into directory
-;SUSIE1:	MOV	R1,	-(PSP)		; Read directory from disk
-;	MOV	R0,	-(PSP)		;
-;	MOV	#DKREAD, -(PSP)		;
-;	JSR	PC,	DDA		;
-;	SUB	#^D512,	R1		;
-;	SOB	R0,	SUSIE1		;
-;	MOV	#^D128,	R0		; Close all files
-;SUSIE2:	CLRB	FST-1(R0)		;
-;	SOB	R0,	SUSIE2		;
-;--
+	MOV	#BITMAP, -(PSP)		; Read bitmap from disc
+	CLR	-(PSP)			; Sector zero
+	MOV	#DKREAD, -(PSP)		;
+	JSR	PC,	DDA		;
+	MOV	#2,	R0		; Two sectors for directory
+	MOV	#FILES+^D512, R1	; Offset into directory
+SUSIE1:	MOV	R1,	-(PSP)		; Read directory from disk
+	MOV	R0,	-(PSP)		;
+	MOV	#DKREAD, -(PSP)		;
+	JSR	PC,	DDA		;
+	SUB	#^D512,	R1		;
+	SOB	R0,	SUSIE1		;
+	MOV	#^D128,	R0		; Close all files
+SUSIE2:	CLRB	FST-1(R0)		;
+	SOB	R0,	SUSIE2		;
 EVER:	MOV	#-1,	EIF		; Inhibit escapes
 	MOV	#PROMPT, -(PSP)		; Display the prompt
 	JSR	PC,	$DTEXT		;
@@ -1039,8 +1691,7 @@ EVER:	MOV	#-1,	EIF		; Inhibit escapes
 	BR	EVER			; Start again
 EVER1:	MOV	R0,	(PSP)		; Yes- so try and run
 	CLR	EIF			; Allow escapes
-;	JMP	$RUN			; @Todo run
-	JMP	EVER			; @Todo remove
+	JMP	$RUN			;
 SUETOP:					;*****	Top core location for SUSIE
 	.PAGE
 	.SBTTL	INTERRUPT VECTOR INITIALIZATION
