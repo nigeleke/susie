@@ -1,0 +1,186 @@
+	$NAME	<FILE DIRECTORY OPERATOR>
+
+	JMP	FIDO
+
+;
+; Display<kayboard	<,
+; Input			FILE<,
+; Output		<FILE,
+; Transfer		FILE<FILE,
+; Rename		FILE<FILE/R,
+; Delete		FILE/D,
+; Run			FILE/R,
+; Index			/I,
+;
+; followed by , or <EOL>    ',' for continuation only
+;
+EOL	=	13			; End of line
+
+HELLO:	$MESS	<[FIDO] >
+ERROR:	$MESS	<!! SYNTAX ERROR>
+BACKUP:	$MESS	< *>
+
+FILE1:	$LFDB	<      >
+FILE2:	$LFDB	<      >
+	.PAGE
+;
+;	R A D 5 0   T O   A S C I I
+;
+RATAB:	.BYTE	'$, '., '#, 0
+
+R50ASC:	MOV	R2,	-(SP)
+	MOV	R1,	-(SP)
+	MOV	R0,	-(SP)
+	MOV	(PSP)+,	R1
+	MOV	#3,	R2
+RASC1:	CLR	R0
+	DIV	#50,	R0
+	TST	R1
+	BNE	RASC2
+	MOV	#40,	R1
+	BR	RASC5
+RASC2:	CMP	R1,	#33
+	BGE	RASC3
+	ADD	#101-1,	R1
+	BR	RASC5
+RASC3:	CMP	R1,	#35
+	BLT	RASC4
+	ADD	#60-36,	R1
+	BR	RASC5
+RASC4:	MOVB	RATAB-33(R1),	-(SP)
+	MOV	(SP)+,	R1
+RASC5:	MOV	R1,	-(PSP)
+	MOV	R0,	R1
+	SOB	R2,	RASC1
+	MOV	(SP)+,	R0
+	MOV	(SP)+,	R1
+	MOV	(SP)+,	R2
+	RTS	PC
+;
+;	I N D E X I N G
+;
+INDEX:	MOV	#^D128,	R2		; 128 files
+	MOV	R2,	R3		;
+INDEX1:	DEC	R3			; Hash number:=filenumber + 1
+	$INDEX	R3			; Get data on file
+	MOV	(PSP)+,	R4		; High order of name
+	BNE	INDEX3			;
+INDEX2:	ADD	#^D8,	PSP		; No entry
+	BR	INDEX6			;
+INDEX3:	TST	(R0)			; Look for particular entry
+	BEQ	INDEX8			; No
+	CMP	(R0),	R4		; Yes- found it ?
+	BNE	INDEX2			;
+	CMP	2(R0),	(PSP)		; Maybe
+	BNE	INDEX2			;
+INDEX8:	$DCHAR	#EOL			; Newline before name
+	JSR	PC,	R50ASC		; Convert low order of name
+	MOV	R4,	-(PSP)		;
+	JSR	PC,	R50ASC		; then high order of name
+	MOV	#^D6,	R4		;
+INDEX4:	$DCHAR	(PSP)+			;
+	SOB	R4,	INDEX4		;
+	TST	(PSP)+			; Forget block number of start block
+	TST	(PSP)+			; Test for backup
+	BEQ	INDEX5			;
+	$DTEXT	#BACKUP			;
+INDEX5:	TST	(PSP)+			; Cannot be open
+	TST	(R0)			; Was this the only search
+INDEX6:	SOB	R2,	INDEX1		;
+INDEX7:	RTS	PC			;<<
+;
+;	T R A N S F E R
+;
+TRNSFR:	MOV	R4,	-(SP)		;
+	TST	(R1)			; File or keyboard ?
+	BEQ	TRAN1			;
+	$OPENI	R1			; File
+TRAN1:	CLR	R4			; Last char on keyboard
+	TST	(R0)			; File or display ?
+	BEQ	TRAN2			;
+	$OPENO	R0			; File
+TRAN2:	TST	(R1)			; Test for end of input ?
+	BEQ	TRAN3			;
+	BREOF	R1,	TRAN8		;
+	BR	TRAN5			;
+TRAN3:	CMP	R4,	#^D26		; ^Z end of input from keys
+	BEQ	TRAN8			;
+TRAN4:	$INLIN				;
+	MOV	(PSP),	R4		; Get keys character
+	BR	TRAN6			;
+TRAN5:	$READ	R1			;
+TRAN6:	MOV	(PSP)+,	R2		;
+	CMP	R4,	#^D26		; End of input ?
+	BEQ	TRAN8			;
+	TST	(R0)			; File or display
+	BEQ	TRAN7			;
+	$WRITE	R0,	R2		;
+	BR	TRAN2			;
+TRAN7:	$DCHAR	R2			;
+	BR	TRAN2			;
+TRAN8:	TST	(R1)			; Close file or keyboard
+	BEQ	TRAN9			;
+	$CLOSE	R1			;
+	BR	TRAN9A			;
+TRAN9:	TST	(PSP)+			; Get continue char
+	$INLIN				;
+TRAN9A:	MOV	(PSP)+,	R4		;
+	TST	(R0)			; Close file or display ?
+	BEQ	TRAN10			;
+	$CLOSE	R0			;
+TRAN10:	RTS	PC			;<<
+	.PAGE
+;
+;	F I L E   D I R E C T O R Y   O P E R A T O R
+;
+FIDO:	$DTEXT	#HELLO			;
+FIDO1:	MOV	#FILE1+2, R0		; No default names
+	CLR	(R0)			;
+	CLR	-(R0)			;
+	MOV	#FILE2+2, R1		;
+	CLR	(R1)			;
+	CLR	-(R1)			;
+	$INFNM	R0			; Read a filename
+	MOV	(PSP)+,	R2		; Get operation type
+	CMP	R2,	#'<		; Transfer type ?
+	BNE	FIDO4			; No
+	$INFNM	R1			; Yes- Get second filename
+	MOV	(PSP)+,	R4		; Get continuation character
+	CMP	R4,	#'/		; Rename transfer ?
+	BNE	FIDO3			; No
+	$INLIN				; Maybe- check /R
+	CMP	(PSP)+,	#'R		; Rename ?
+	BEQ	FIDO2			; Yes
+	$ERROR	#ERROR			; Not R so error
+FIDO2:	$RENAM	R0,	R1		; Complete the rename
+	$INLIN				; Get correct continue character
+	MOV	(PSP)+,	R4		;
+	BR	FIDO10			;
+FIDO3:	JSR	PC,	TRNSFR		; Do the transfer
+	BR	FIDO10			;
+FIDO4:	CMP	R2,	#'/		; Switch type ?
+	BEQ	FIDO5			;
+	$ERROR	#ERROR			; No- error
+FIDO5:	$INLIN				; Get the switch
+	MOV	(PSP),	R3		;
+	CMP	R3,	#'D		; Delete switch ?
+	BNE	FIDO6			;
+	$DELET	R0			; Yes
+	BR	FIDO9			;
+FIDO6:	CMP	R3,	#'I		; Index switch ?
+	BNE	FIDO7			;
+	JSR	PC,	INDEX		; Yes
+	BR	FIDO9			;
+FIDO7:	CMP	R3,	#'R		; Run switch ?
+	BNE	FIDO8			;
+	$INLIN				; Yes- next char is not for user...
+	TST	(PSP)+			;
+	$RUN	R0			;
+FIDO8:	$ERROR	#ERROR			;
+FIDO9:	$INLIN				; Get correct continue character
+	MOV	(PSP)+,	R4		;
+FIDO10:	CMP	R4,	#',		; Continuation ?
+	BEQ	FIDO1			;
+	$INEOL	R4			; No- so read till end of line
+	$EXIT				; and finish
+	.END	FIDO
