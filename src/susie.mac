@@ -1540,7 +1540,7 @@ DSTT:					; Table top
 UDISR:	MOV	(SP),	-(SP)		; Get trap instruction
 	SUB	#2,	(SP)		;
 	MOV	@(SP)+,	-(SP)		;
-	BIC	#EMT-1,	(SP)		;
+	BIC	#EMT+1,	(SP)		;
 	CMP	(SP),	#DSTT-DST	; Test legality
 	BGE	UDISR1			; Not legal
 	ADD	#DST,	(SP)		; Legal

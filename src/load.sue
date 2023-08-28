@@ -7,7 +7,7 @@ PSW	=	177776
 PRS	=	177550
 PRB	=	177552
 
-DDS	=	177520
+DDS	=	177564
 TKS	=	177560
 
 EOL	=	13
@@ -24,7 +24,7 @@ LOAD:	MOV	#100000, SP		; Reset stack pointer (not usual)
 	MOV	#40000,	PSP		;
 	CLR	@#PSW			;
 	BIS	#40,	@#DDS		; Reset keyboard interrupts
-	BIS	#1000,	@#TKS		;
+	BIS	#100,	@#TKS		;
 	$DTEXT	#PROMPT			;
 	MOV	#OFILE,	R0		; Set address of file descriptor
 	$INFNM	R0			; Get filename
