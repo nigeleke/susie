@@ -8,6 +8,7 @@ macro11 -rt11 -o target/boot.obj -l target/boot.lst src/boot.mac
 
 macro11 -rt11 -o target/load.obj -l target/load.lst src/sysmac.sue src/load.sue
 macro11 -rt11 -o target/fido.obj -l target/fido.lst src/sysmac.sue src/fido.sue
+macro11 -rt11 -o target/kt.obj -l target/kt.lst src/sysmac.sue src/kt.sue
 
 if [ -d "/opt/pidp11" ]
 then
@@ -17,6 +18,7 @@ then
 
     obj2bin.pl -rt11 --outfile=target/load.bin target/load.obj
     obj2bin.pl -rt11 --outfile=target/fido.bin target/fido.obj
+    obj2bin.pl -rt11 --outfile=target/kt.bin target/kt.obj
 
     sudo cp simh/selections /opt/pidp11/systems/
 
@@ -37,4 +39,5 @@ then
     sudo cp simh/load/boot.ini /opt/pidp11/systems/load/
 
     sudo cp target/fido.bin /opt/pidp11/systems/boot/fido.bin
+    sudo cp target/kt.bin /opt/pidp11/systems/boot/kt.bin
 fi
