@@ -69,7 +69,7 @@ PC      =       %7			; Program counter
 	.WORD	0			; Hash
 	.WORD	.+4			; Buffer pointer
 	.WORD	0			; Byte pointer
-	.BLKB	^D256			; Buffer
+	.BLKW	^D256			; Buffer
 .ENDM
 
 ; *****************************************************************************
@@ -162,7 +162,7 @@ PC      =       %7			; Program counter
 ; *****************************************************************************
 ; Wait for a character to become available and return it...
 ;
-.MACRO	$INCHAR
+.MACRO	$INCHR
 	EMT	24
 .ENDM
 
@@ -278,7 +278,7 @@ PC      =       %7			; Program counter
 ; Branch on not end-of-file...
 ; Used to detect end-of-file during reading.
 ;
-.MACRO	BREOF	LFD, ADDR
+.MACRO	BRNEOF	LFD, ADDR
 	MOV	LFD, -(PSP)
 	ADD	#11, (PSP)
 	TSTB	@(PSP)+

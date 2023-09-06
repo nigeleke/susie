@@ -31,6 +31,7 @@ LOAD:	MOV	#100000, SP		; Reset stack pointer (not usual)
 	$INEOL	(PSP)+			; Read til end of line
 	TST	OFILE			; Another load?
 	BEQ	LOAD6			; No
+	CLR	R4
 	$OPENO	R0			; Yes- open the file
 LOAD0:	INC	@#PRS			;
 LOAD1:	TSTB	@#PRS			; Get a character
@@ -40,7 +41,7 @@ LOAD1:	TSTB	@#PRS			; Get a character
 	$WRITE	R0,	R1		; Write it
 LOAD2:	INC	@#PRS			; Write rest of tape
 LOAD3:	BIT	#100200, @#PRS		;
-	BHI	LOAD4			; Stop on error- no tape
+	BMI	LOAD4			; Stop on error- no tape
 	BEQ	LOAD3			;
 	$WRITE	R0,	@#PRB		; else write character
 	BR	LOAD2			;

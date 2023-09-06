@@ -125,6 +125,7 @@ DKINIT:	RESET
 	CLR	-(PSP)			;
 	CLR	-(PSP)			;
 	MOV	#DKSET,	-(PSP)		;
+	JSR	PC,	DDA		;
 	MOV	#^D512,	R0		; Clear file directory
 INIT.1:	CLRB	BUFFER-1(R0)		;
 	SOB	R0,	INIT.1		;

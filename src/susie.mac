@@ -901,7 +901,7 @@ OIOF:	.WORD	^D19
 	.ASCII	/!! OPENI- File open/
 	.EVEN
 
-OOFO:	.WORD	^D36
+OOFD:	.WORD	^D36
 	.ASCII	/!! OPENO- Full directory or bad name/
 	.EVEN
 
@@ -983,8 +983,8 @@ DDA2:	TSTB	(R4)			; Done ?
 	TST	(R4)			; Yes- error ?
 	BPL	DDA3			; No- finish
 	SOB	R3,	DDA1		; Yes- check repeat count
-	HALT				;
-	BR	.-2			;
+	MOV	#DKFAIL, -(PSP)		; Disk failure
+	JMP	$ERROR			;
 DDA3:	JSR	PC,	RR		;
 	RTS	PC			;<<
 ;
@@ -996,9 +996,9 @@ DDA3:	JSR	PC,	RR		;
 ;
 ALLOC:	JSR	PC,	RS		;
 	MOV	#BITMAP, R0		; Check bitmap for free block
-ALLOC1:	MOVB	(R0)+,	R1		; Free block found
+ALLOC1:	MOVB	(R0)+,	R1		; Free block found ?
 	BNE	ALLOC2			; Yes
-	CMP	R0,	#BMAPC		; No- checked all blocks?
+	CMP	R0,	#BMAPC		; No- checked all blocks ?
 	BNE	ALLOC1			; No
 	CLR	-(PSP)			; Yes- No free blocks
 	BR	ALLOC5			;
@@ -1070,7 +1070,7 @@ HASH1:	SUB	#^D8,	R3		; Point to next entry
 	MOV	R2,	R1		; Yes- remember it
 	BR	HASH3			;
 HASH2:	CMP	(R0),	(R3)		; Filename the same ?
-	BNE	HASH2			; No
+	BNE	HASH3			; No
 	CMP	2(R0),	2(R3)		; Maybe ?
 	BEQ	HASH4			; Yes- file found
 HASH3:	SOB	R2,	HASH1		;
@@ -1103,7 +1103,7 @@ GETBYT:	MOV	R0,	-(PSP)		; Set up LFD pointer
 ;	(for run routine)
 ;
 GETWRD:	JSR	PC,	GETBYT		; Get byte
-	MOV	LDBYTE,	LDWORD		; Move to word
+	MOVB	LDBYTE,	LDWORD		; Move to word
 	JSR	PC,	GETBYT		; Get byte
 	MOVB	LDBYTE,	LDWORD+1	; Place in high byte
 	RTS	PC			;<<
@@ -1152,11 +1152,11 @@ $OPENI:	JSR	PC,	RS		;
 OPENI0:	MOV	#OINOF,	-(PSP)		; No- error
 	JMP	$ERROR			;<<
 OPENI1:	MOVB	FST(R1), R4		; Open for o/p?
-	INC	R4			; or too many i/p ?
+	INCB	R4			; or too many i/p ?
 	BGT	OPENI2			; No
 	MOV	#OIOF,	-(PSP)		; Yes- error
 	JMP	$ERROR			;<<
-OPENI2:	MOV	R1,	LFDHSH(R1)	; Set hash number
+OPENI2:	MOV	R1,	LFDHSH(R0)	; Set hash number
 	MOV	OFCB,	R4		; Attach LFD to open file chain
 	BNE	OPENI3			; Chain already exists ?
 	MOV	R0,	OFCF		; No chain so set up
@@ -1166,7 +1166,7 @@ OPENI3:	MOV	R0,	LFDFCF(R4)	; Chain exists so..
 OPENI4:	MOV	R0,	OFCB		;
 	INCB	FST(R1)			; Tell all file is open
 	INCB	LFDOPN(R0)		; Tell LFD file is open
-	MOV	LFDBUF(R0), RECLM1	; Get buffer address
+	MOV	LFDBUF(R0), R1		; Get buffer address
 	MOV	R1,	-(PSP)		; Read buffer from file
 	MOV	R3,	-(PSP)		; Get first block no- of file
 	MOV	#DKREAD, -(PSP)		; and read from disc
@@ -1190,7 +1190,7 @@ $OPENO:	JSR	PC,	RS		;
 	JSR	PC,	HASH		;
 	MOV	(PSP)+,	R1		; Get hash value
 	BPL	OPENO1			; Can file be created ?
-	MOV	#OOFO,	-(PSP)		; No- errpr
+	MOV	#OOFD,	-(PSP)		; No- error
 	JMP	$ERROR			;<<
 OPENO1:	MOV	(PSP)+,	R2		; Get file directory pointer
 	ADD	#MFB1,	R2		;
@@ -1282,7 +1282,7 @@ WRITE1:	MOV	(PSP)+,	R1		; Put byte in buffer
 	CMP	(R1),	#^D508		; Buffer full ?
 	BLT	WRITE3			; No
 	MOV	R1,	-(PSP)		; Yes- write to disc
-	MOV	^D512(R1), -(PSP)	;
+	MOV	^D510(R1), -(PSP)	;
 	MOV	#DKWRIT, -(PSP)		;
 	JSR	PC,	ALLOC		; Allocate the new disk block
 	MOV	(PSP)+,	R2		; Is there a new one ?
@@ -1329,7 +1329,7 @@ CLOSE3:	CLRB	LFDOPN(R0)		; Tell LFD file is closed
 	MOV	R1,	OFCF		; Yes
 	BR	CLOSE5			;
 CLOSE4:	MOV	R1,	LFDFCF(R2)	;
-CLOSE5:	CMP	OFCB, 	R0		; Is it at back ?
+CLOSE5:	CMP	OFCB,	R0		; Is it at back ?
 	BNE	CLOSE6			; No
 	MOV	R2,	OFCB		; Yes
 	BR	CLOSE7			;
@@ -1406,6 +1406,7 @@ RENAM7:	MOV	MFB1(R1), MFB1(R4)	; New file=Old file
 	BNE	RENAM8			; Backing exists
 	CLR	(R1)+			; Don't exist so
 	CLR	(R1)+			; eliminate
+	BR	RENAM9			;
 RENAM8:	CLR	BFB1(R1)		; No backup now
 RENAM9:	JSR	PC,	RR		;
 	RTS	PC			;<<
@@ -1443,7 +1444,7 @@ $RUN:	MOV	OFCF,	R0		; Closed all files ?
 	BR	$RUN			;
 RUN1:	MOV	(PSP)+,	R0		; Get LFD address
 	ADD	#^D16,	R0		; Transfer to stack
-	MOVB	#^D8,	R1		; else it may be overwritten
+	MOV	#^D8,	R1		; else it may be overwritten
 RUN2:	MOV	-(R0),	-(PSP)		;
 	SOB	R1,	RUN2		;
 	MOV	PSP,	R0		; Set new LFD pointer
