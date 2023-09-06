@@ -91,7 +91,7 @@ INDEX7:	RTS	PC			;<<
 ;
 ;	T R A N S F E R
 ;
-TRNSFR:	MOV	R4,	-(SP)		;
+TRNSFR:	MOV	R4,	-(PSP)		;
 	TST	(R1)			; File or keyboard ?
 	BEQ	TRAN1			;
 	$OPENI	R1			; File
