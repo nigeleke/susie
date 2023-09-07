@@ -132,14 +132,16 @@ LKIV	=	100
 LKC:	.WORD	0			; Line Clock count
 
 LKISR:	DEC	LKC			; Increment link clock count
-	BNE	LKISR1			; If not=0 then return to br .
-	ADD	#2,	(SP)		; else return to clr status
+;	BNE	LKISR1			; Submitted defect--: If not=0 then return to br .
+;	ADD	#2,	(SP)		; Submitted defect--: else return to clr status
 LKISR1:	RTI				;<<
 
 $DELAY:	MOV	(PSP)+, LKC		; Get delay value
 	BEQ	DELAY1			; End if no delay
 	BIS	#100, @#LKS		; Set interrupt enable
-	BR	.			; Wait for interrupt
+DELAY0:	TST	LKC			; Interrupts will decrement
+	BNE	DELAY0			; Wait for interrupt
+	BIC	#100, @#LKS		; Submitted defect++: Stop interrupts when zero
 DELAY1:	RTS	PC			;<<
 	.PAGE
 	.SBTTL	Command Device Control
