@@ -8,6 +8,8 @@ fi
 
 # Core programs...
 #
+echo Core
+echo
 programs=("susie" "dkinit" "boot")
 for program in "${programs[@]}"
 do
@@ -23,9 +25,12 @@ do
         sudo cp simh/$program/boot.ini /opt/pidp11/systems/$program/
     fi
 done
+echo
 
 # Susie programs...
 #
+echo Susie
+echo
 programs=("load" "fido" "kt" "ft")
 for program in "${programs[@]}"
 do
@@ -36,9 +41,8 @@ do
     then
         obj2bin.pl -rt11 --outfile=target/$program.bin target/$program.obj
 
-        if $program -eq "load"
+        if [ "$program" = "load" ]
 	then
-	    echo "**** LOAD"
             sudo mkdir -p /opt/pidp11/systems/$program/
             sudo cp target/$program.bin /opt/pidp11/systems/$program/$program.bin
             sudo cp simh/$program/boot.ini /opt/pidp11/systems/$program/
@@ -47,3 +51,5 @@ do
 	fi
     fi
 done
+echo
+
