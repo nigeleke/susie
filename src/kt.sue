@@ -107,7 +107,3 @@ KT6:	$DCHAR	#EOL
 	$INEOL	#'Z
 	$EXIT
 	.END	KT
-	
-
-
-	
