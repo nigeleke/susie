@@ -10,29 +10,60 @@ I purchased and built a [PiDP-11](https://obsolescence.wixsite.com/obsolescence/
 
 For no other reason, other than nostalgia, I decided to reincarnate Susie on the PiDP-11.
 
-This project is very likely absolutely no use to anyone at all in any way shape or form, but I would like to point out that it beat [MS-DOS](https://en.wikipedia.org/wiki/MS-DOS) by two years.
+This project was complete two years *before* [MS-DOS](https://en.wikipedia.org/wiki/MS-DOS) although there was an *expensive* (at the time) $240 forerunner [CP/M](https://en.wikipedia.org/wiki/CP/M) that started development 4-5 years prior.
 
-| Programs  | |
-|-----------|-|
-| susie     | The main operating system. |
-| dkinit    | Disk initiasation program. |
-| boot      | Disk bootstrap program. |
-| sysmac    | System macros, used in Susie and for any program that runs on Susie. |
-| load      | Enables programs to be loaded on to Susie. |
-| fido      | File utility package. |
-| kt        | Keyboard test program. |
-| ft        | File test program. |
-| gbig      | Large file test. |
+**This project is very likely absolutely no use to anyone at all in any way shape or form.**
+
+| Core Programs | |
+|---------------|-|
+| `susie`       | The main operating system. |
+| `dkinit`      | Disk initiasation program. |
+| `boot`        | Disk bootstrap program. |
+
+| Susie Programs | |
+|----------------|-|
+| `sysmac`       | System macros, used in Susie and for any program that runs on Susie. |
+| `load`         | Enables programs to be loaded on to Susie. |
+| `fido`         | File utility package. |
+| `kt`           | Keyboard test program. |
+| `ft`           | File test program. |
+| `gbig`         | Large file test. |
 
 ## Development environment
 
-### Pre-requisite
+The easiest way to set up the development environment is with [nix](https://nixos.org/). This would then require local nix install of [`github:nigeleke/macro11`](https://github.com/nigeleke/macro11).
 
-Requires local nix install of [`github:nigeleke/macro11`](https://github.com/nigeleke/macro11).
-
-### Build
+**Start** the development environment (the `--impure` setting is used for [Visual Code](https://code.visualstudio.com/)):
 
 ```
-nix develop --impure
-./build.sh
+> nix develop --impure
 ```
+
+**Edit**:
+```
+> code .
+```
+
+**Assemble** everything:
+```
+> ./build.sh
+```
+
+## Runtime environment
+
+Follow the [PiDP-11](https://obsolescence.wixsite.com/obsolescence/pidp-11) instructions [here](https://www3.ispnet.net/pidp11/PiDP-11%20Manual%20v0.2.odt).
+
+It is not necessary to perform the *systems* installations as these options get overwritten with the `simh/selections` file during the `build` process.
+```
+> ./build.sh
+```
+
+### [PiDP-11](https://obsolescence.wixsite.com/obsolescence/pidp-11) switch settings
+
+| Switches | Program | Description |
+|--|--|--|
+| 0000 | `idled` | Runs Idled program and shows these options |
+| 0001 | `susie` | Runs raw copy of Susie, loaded from *paper-tape* |
+| 0002 | `dkinit` | Runs disk initialisation (loaded from *paper-tape*). This will immediately *halt*. This was to allow the development operating system disk [RT-11](https://en.wikipedia.org/wiki/RT-11) to be removed, and replaced with the disk where Susie is to be written. Press *cont* and the disk is updated with a copy of Susie, and `dkinit` *halt*s again. |
+| 0003 | `boot` | Runs the *bootstrap* program (loaded from *paper-tape*), which then loads and runs the copy of Susie currently on the disk. To load paper-tapes into the reader, stop the simulation (CTRL-E), then `att ptr <file.bin>` followed by `cont`. |
+| 0004 | `load` | Allows files to be loaded from *paper-tape* onto the Susie disk. This is set up for a self load, so at the `[LOAD] ` prompt enter `LOAD`. From that point on you can then start with the `boot` sequence. |
