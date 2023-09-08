@@ -31,7 +31,7 @@ echo
 #
 echo Susie
 echo
-programs=("load" "fido" "kt" "ft")
+programs=("load" "fido" "kt" "ft" "gbig")
 for program in "${programs[@]}"
 do
     echo $program

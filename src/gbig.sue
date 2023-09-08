@@ -1,0 +1,13 @@
+	$NAME	<LARGE FILE GENERATION>
+
+	JMP	GBIG
+
+FILE:	$LFD	<LFILE >, BUFFER
+
+BUFFER:	.BLKW	^D256
+
+GBIG:	$OPENO	#FILE			; Open the file
+GBIG1:	MOV	#^D507,	BUFFER		; 'Fill' the buffer
+	$WRITE	#FILE,	#'Z		; Write last byte
+	BR	GBIG1			; Write next block
+	.END	GBIG
