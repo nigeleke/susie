@@ -22,7 +22,7 @@ This project was complete two years *before* [MS-DOS](https://en.wikipedia.org/w
 
 | Susie Programs | |
 |----------------|-|
-| `sysmac`       | System macros, used in Susie and for any program that runs on Susie. |
+| `sysmac`       | System macros used by programs developed for Susie. |
 | `load`         | Enables programs to be loaded on to Susie. |
 | `fido`         | File utility package. |
 | `kt`           | Keyboard test program. |
