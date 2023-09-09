@@ -8,9 +8,9 @@ The project was "An operating system for a minicomputer", where the mini-compute
 
 I purchased and built a [PiDP-11](https://obsolescence.wixsite.com/obsolescence/pidp-11), which is a 2/3 scale replica of a PDP-11/70 emulated with [SIMH](https://github.com/simh/simh) on a [Raspberry Pi](https://www.raspberrypi.com/).
 
-For no other reason, other than nostalgia, I decided to reincarnate Susie on the PiDP-11.
+For no other reason, other than nostalgia, I decided to reincarnate Susie on the [PiDP-11](https://obsolescence.wixsite.com/obsolescence/pidp-11).
 
-This project was complete two years *before* [MS-DOS](https://en.wikipedia.org/wiki/MS-DOS) although there was an *expensive* (at the time) $240 forerunner [CP/M](https://en.wikipedia.org/wiki/CP/M) that started development 4-5 years prior.
+This project was complete two years *before* [MS-DOS](https://en.wikipedia.org/wiki/MS-DOS) although [CP/M](https://en.wikipedia.org/wiki/CP/M) had been developed four years prior.
 
 **This project is very likely absolutely no use to anyone at all in any way shape or form.**
 
