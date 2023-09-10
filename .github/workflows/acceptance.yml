@@ -3,7 +3,7 @@
 # Acceptance cycle comprises:
 # - tag
 #
-name: Publish Cycle
+name: Acceptance Cycle
 
 on:
   push:
