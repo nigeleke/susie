@@ -1,0 +1,28 @@
+# Run acceptance-cycle on main commits.
+#
+# Acceptance cycle comprises:
+# - tag
+#
+name: Publish Cycle
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: Build
+        run: |
+          git config --global user.email "nigeleke@users.noreply.github.com"
+          git config --global user.name "Nigel Eke"
+          git tag -a $(date +%Y%m%d%H%M) -m "$(date +%Y%m%d%H%M)"
+          git push --tags
