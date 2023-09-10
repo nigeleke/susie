@@ -17,7 +17,7 @@ This project was complete two years *before* [MS-DOS](https://en.wikipedia.org/w
 | Core Programs | |
 |---------------|-|
 | `susie`       | The main operating system. |
-| `dkinit`      | Disk initiasation program. |
+| `dkinit`      | Disk initialisation program. |
 | `boot`        | Disk bootstrap program. |
 
 | Susie Programs | |
