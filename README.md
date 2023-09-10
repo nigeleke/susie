@@ -1,4 +1,4 @@
-# Single User Interactive Executive
+# susie
 
 [![Language](https://img.shields.io/badge/language-Macro11-blue.svg?style=plastic)](https://en.wikipedia.org/wiki/MACRO-11)
 [![Build](https://img.shields.io/github/actions/workflow/status/nigeleke/susie/acceptance.yml?style=plastic)](https://github.com/nigeleke/susie/actions/workflows/acceptance.yml)
