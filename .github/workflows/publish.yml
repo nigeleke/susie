@@ -28,7 +28,7 @@ jobs:
           mkdir docs0
           cp README.md docs0/
           cp -R docs docs0/
-
+          git push --tags
 
       - name: Publish
         run: |
