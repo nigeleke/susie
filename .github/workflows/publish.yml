@@ -22,6 +22,8 @@ jobs:
 
       - name: Build
         run: |
+          git config --global user.email "nigeleke@users.noreply.github.com"
+          git config --global user.name "Nigel Eke"
           git tag -a $(date +%Y%m%d%H%M) -m "$(date +%Y%m%d%H%M)"
           mkdir docs0
           cp README.md docs0/
