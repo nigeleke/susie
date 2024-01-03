@@ -4,7 +4,7 @@
 [![Build](https://img.shields.io/github/actions/workflow/status/nigeleke/susie/acceptance.yml?style=plastic)](https://github.com/nigeleke/susie/actions/workflows/acceptance.yml)
 ![Version](https://img.shields.io/github/v/tag/nigeleke/susie?style=plastic)
 
-[Site](https://nigeleke.github.io/susie) | [GitHub](https://github.com/nigeleke/susie)
+  [Site](https://nigeleke.github.io/susie) | [GitHub](https://github.com/nigeleke/susie)
 
 ## Background
 
