@@ -4,11 +4,13 @@
 [![Build](https://img.shields.io/github/actions/workflow/status/nigeleke/susie/acceptance.yml?style=plastic)](https://github.com/nigeleke/susie/actions/workflows/acceptance.yml)
 ![Version](https://img.shields.io/github/v/tag/nigeleke/susie?style=plastic)
 
+[Site](https://nigeleke.github.io/susie) | [GitHub](https://github.com/nigeleke/susie)
+
 ## Background
 
 Susie (Single User Interactive Executive) is a simple operating system developed for my final year project at [City University](https://www.city.ac.uk/) in 1979.
 
-The project was "An operating system for a minicomputer", where the mini-computer was a [PDP-11/34](https://en.wikipedia.org/wiki/PDP-11).
+The project was "[An Operating System for a Minicomputer](https://nigeleke.github.io/susie/docs/19790521_AnOperatingSystemForAMinicomputer.pdf)", where the mini-computer was a [PDP-11/34](https://en.wikipedia.org/wiki/PDP-11).
 
 I purchased and built a [PiDP-11](https://obsolescence.wixsite.com/obsolescence/pidp-11), which is a 2/3 scale replica of a PDP-11/70 emulated with [SIMH](https://github.com/simh/simh) on a [Raspberry Pi](https://www.raspberrypi.com/).
 
@@ -33,13 +35,6 @@ This project was complete two years *before* [MS-DOS](https://en.wikipedia.org/w
 | `ft`           | File test program. |
 | `gbig`         | Large file test. |
 
-
-## Documentation
-
-* [An Operating System for a Minicomputer](https://nigeleke.github.io/susie/docs/19790521_AnOperatingSystemForAMinicomputer.pdf) (Final Year Report)
-* [Site](https://nigeleke.github.io/susie)
-* [GitHub](https://github.com/nigeleke/susie)
- 
 ## Development environment
 
 The easiest way to set up the development environment is with [nix](https://nixos.org/). This would then require local nix install of [`github:nigeleke/macro11`](https://github.com/nigeleke/macro11).
